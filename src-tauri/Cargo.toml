@@ -1,0 +1,17 @@
+[package]
+name = "excel-visual-tool"
+version = "0.1.0"
+description = "Excel visualization desktop tool"
+authors = ["Excel Visual Tool"]
+edition = "2021"
+
+[lib]
+name = "excel_visual_tool_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
