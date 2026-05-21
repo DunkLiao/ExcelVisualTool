@@ -25,6 +25,10 @@ select {
   font: inherit;
 }
 
+button {
+  border: 0;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 260px minmax(420px, 1fr) 280px;
@@ -76,16 +80,30 @@ p,
 
 .primary-button {
   min-height: 40px;
-  border: 0;
   border-radius: 6px;
   color: #ffffff;
   background: #2563eb;
   cursor: pointer;
 }
 
+.file-input {
+  display: none;
+}
+
+.error-message {
+  padding: 10px 12px;
+  border: 1px solid #f0b8b8;
+  border-radius: 6px;
+  color: #9f1d1d;
+  background: #fff1f1;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .panel,
 .preview-area,
-.chart-area {
+.chart-area,
+.metadata-panel {
   background: #ffffff;
   border: 1px solid #d8dee8;
   border-radius: 8px;
@@ -98,6 +116,48 @@ p,
   padding: 16px;
 }
 
+.worksheet-list,
+.field-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.worksheet-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid #d8dee8;
+  border-radius: 6px;
+  color: #172033;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.worksheet-button.active {
+  border-color: #2563eb;
+  background: #eef4ff;
+}
+
+.worksheet-button span,
+.field-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.worksheet-button small,
+.field-row small {
+  flex: 0 0 auto;
+  color: #657084;
+  font-size: 12px;
+}
+
 .empty-state,
 .table-placeholder {
   display: flex;
@@ -106,6 +166,10 @@ p,
   min-height: 96px;
   border: 1px dashed #c6ceda;
   border-radius: 6px;
+}
+
+.empty-state.compact {
+  min-height: 64px;
 }
 
 .workspace {
@@ -139,6 +203,45 @@ p,
   margin: 18px;
 }
 
+.table-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.data-table {
+  width: 100%;
+  min-width: max-content;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.data-table th,
+.data-table td {
+  max-width: 240px;
+  padding: 9px 12px;
+  border-bottom: 1px solid #e7ebf1;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.data-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  color: #394456;
+  background: #f8fafc;
+  font-weight: 600;
+}
+
+.table-empty-note {
+  padding: 18px;
+  color: #657084;
+  font-size: 13px;
+}
+
 .chart {
   flex: 1;
   min-height: 240px;
@@ -160,6 +263,22 @@ p,
   border-radius: 6px;
   color: #172033;
   background: #ffffff;
+}
+
+.metadata-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.field-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px solid #e7ebf1;
+  border-radius: 6px;
 }
 
 @media (max-width: 960px) {
