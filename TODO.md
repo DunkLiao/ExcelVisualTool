@@ -6,8 +6,8 @@
 - [x] 加入 ECharts 作為圖表渲染套件。
 - [x] 加入 SheetJS 類套件，用於前端解析 `.xlsx`。
 - [x] 確認第一版不加入 Microsoft Excel、Python、pandas、VBA、COM automation 或雲端上傳依賴。
-- [ ] 設定 Windows portable build 為主要發佈目標。
-- [ ] 規劃 installer 作為第二種包裝，用於 WebView2 Runtime、捷徑與後續更新。
+- [x] 設定 Windows portable build 為主要發佈目標。
+- [x] 規劃 installer 作為第二種包裝，用於 WebView2 Runtime、捷徑與後續更新。
 
 ## 2. Excel 檔案讀取與解析
 
@@ -86,20 +86,23 @@
 ## 10. 打包驗證
 
 - [x] 產出 Windows portable build。
-- [ ] 驗證 portable build 可在無 Node.js 的環境執行。
-- [ ] 驗證 portable build 可在無 Python 的環境執行。
-- [ ] 將缺 WebView2 Runtime 的情境列為 installer 驗證項。
-- [ ] 確認缺 WebView2 Runtime 不阻塞 portable MVP，但需有明確說明或提示。
+- [x] 驗證 portable build 可在無 Node.js 的環境執行。
+- [x] 驗證 portable build 可在無 Python 的環境執行。
+- [x] 將缺 WebView2 Runtime 的情境列為 installer 驗證項。
+- [x] 確認缺 WebView2 Runtime 不阻塞 portable MVP，但需有明確說明或提示。
+- [x] 建立 portable 與 installer 發佈驗證清單。
+- [x] 在乾淨 Windows 環境完成 portable smoke test。
+- [x] UAT 通過。
 
 ## 11. 第一版不做事項
 
 - [x] 不支援 `.xls`。
 - [x] 不支援 `.csv`。
 - [x] 不支援巨集。
-- [ ] 不保證高度複雜 Excel 格式保留。
-- [ ] 不做登入。
-- [ ] 不做雲端同步。
-- [ ] 不做多人協作。
-- [ ] 不做大型資料效能最佳化。
-- [ ] 不做自然語言問答。
-- [ ] 不做 AI 自動分析。
+- [x] 不保證高度複雜 Excel 格式保留。
+- [x] 不做登入。
+- [x] 不做雲端同步。
+- [x] 不做多人協作。
+- [x] 不做大型資料效能最佳化。
+- [x] 不做自然語言問答。
+- [x] 不做 AI 自動分析。
