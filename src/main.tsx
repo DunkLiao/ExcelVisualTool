@@ -7,11 +7,12 @@ import "./styles.css";
 const PREVIEW_ROW_LIMIT = 200;
 const SETTINGS_STORAGE_KEY = "excel-visual-tool.chart-settings.v1";
 const RECENT_FILE_STORAGE_KEY = "excel-visual-tool.recent-file.v1";
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 type CellValue = string | number | boolean | Date | null;
 
 type FieldType = "text" | "number" | "date" | "mixed" | "empty";
-type ChartType = "bar" | "line" | "pie" | "scatter" | "stackedBar";
+type ChartType = "bar" | "line" | "pie" | "scatter" | "stackedBar" | "timeSeries";
 
 type ParsedSheet = {
   name: string;
@@ -45,6 +46,13 @@ type ChartValidation = {
 };
 
 type ChartOption = Record<string, unknown>;
+type TimeAxisGranularity = "year" | "month" | "day";
+type TooltipParam = {
+  axisValue?: string | number;
+  marker?: string;
+  seriesName?: string;
+  value?: unknown;
+};
 
 const DEFAULT_CHART_SETTINGS: ChartSettings = {
   chartType: "bar",
@@ -58,7 +66,8 @@ const chartTypeLabels: Record<ChartType, string> = {
   line: "Line",
   pie: "Pie",
   scatter: "Scatter",
-  stackedBar: "Stacked bar"
+  stackedBar: "Stacked bar",
+  timeSeries: "Time series"
 };
 
 function formatCellValue(value: CellValue) {
@@ -109,8 +118,96 @@ function isDateLike(value: CellValue) {
     return false;
   }
 
-  const parsed = Date.parse(trimmed);
-  return !Number.isNaN(parsed) && /\d{1,4}[-/]\d{1,2}[-/]\d{1,4}/.test(trimmed);
+  return parseDateTime(trimmed) !== null;
+}
+
+function parseDateTime(value: string) {
+  const dateOnlyMatch = value.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+  if (dateOnlyMatch) {
+    const [, year, month, day] = dateOnlyMatch;
+    const parsedDate = new Date(Number(year), Number(month) - 1, Number(day));
+    return Number.isNaN(parsedDate.getTime()) ? null : parsedDate.getTime();
+  }
+
+  if (!/\d{1,4}[-/]\d{1,2}[-/]\d{1,4}/.test(value)) {
+    return null;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function coerceDateTime(value: CellValue) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.getTime();
+  }
+
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed || !/\d{1,4}[-/]\d{1,2}[-/]\d{1,4}/.test(trimmed)) {
+    return null;
+  }
+
+  return parseDateTime(trimmed);
+}
+
+function formatDateLabel(value: string | number | Date, granularity: TimeAxisGranularity = "day") {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  if (granularity === "year") {
+    return String(year);
+  }
+
+  if (granularity === "month") {
+    return `${year}-${month}`;
+  }
+
+  return `${year}-${month}-${day}`;
+}
+
+function getTimeAxisGranularity(timestamps: number[]): TimeAxisGranularity {
+  if (timestamps.length < 2) {
+    return "day";
+  }
+
+  const minTime = Math.min(...timestamps);
+  const maxTime = Math.max(...timestamps);
+  const rangeInDays = (maxTime - minTime) / DAY_IN_MS;
+
+  if (rangeInDays > 730) {
+    return "year";
+  }
+
+  if (rangeInDays > 90) {
+    return "month";
+  }
+
+  return "day";
+}
+
+function formatTimeSeriesTooltip(params: TooltipParam | TooltipParam[]) {
+  const pointParams = Array.isArray(params) ? params : [params];
+  const firstPoint = pointParams[0];
+  const firstValue = Array.isArray(firstPoint?.value) ? firstPoint.value : [];
+  const rawDate = firstValue[0] ?? firstPoint?.axisValue ?? "";
+  const lines = pointParams.map((point) => {
+    const pointValue = Array.isArray(point.value) ? point.value[1] : "";
+    const marker = point.marker ?? "";
+    const seriesName = point.seriesName ?? "";
+    return `${marker}${seriesName}<span style="float:right;margin-left:16px;font-weight:600">${pointValue}</span>`;
+  });
+
+  return [formatDateLabel(rawDate as string | number), ...lines].join("<br/>");
 }
 
 function inferFieldType(values: CellValue[]): FieldType {
@@ -223,6 +320,24 @@ function validateNumericField(
   return null;
 }
 
+function validateDateField(
+  metadata: FieldMetadata[],
+  fieldName: string,
+  label: string
+): string | null {
+  const dimensionError = validateDimensionField(metadata, fieldName, label);
+  if (dimensionError) {
+    return dimensionError;
+  }
+
+  const field = getFieldMetadata(metadata, fieldName);
+  if (field?.type !== "date") {
+    return `${label} field must be date/time.`;
+  }
+
+  return null;
+}
+
 function buildChartValidation(
   sheet: ParsedSheet | null,
   metadata: FieldMetadata[],
@@ -249,6 +364,8 @@ function buildChartValidation(
   const xError =
     settings.chartType === "scatter"
       ? validateNumericField(metadata, settings.xField, "X axis")
+      : settings.chartType === "timeSeries"
+        ? validateDateField(metadata, settings.xField, "X axis")
       : validateDimensionField(metadata, settings.xField, "X axis");
   const yError = validateNumericField(metadata, settings.yField, yLabel);
 
@@ -320,7 +437,9 @@ function aggregateRows(sheet: ParsedSheet, settings: ChartSettings) {
     }
 
     const xValue = formatDimensionValue(rawXValue);
-    const seriesName = seriesField ? formatDimensionValue(row[seriesField] ?? null) : settings.yField;
+    const seriesName = seriesField
+      ? formatDimensionValue(row[seriesField] ?? null)
+      : settings.yField;
 
     if (!xValues.includes(xValue)) {
       xValues.push(xValue);
@@ -338,6 +457,31 @@ function aggregateRows(sheet: ParsedSheet, settings: ChartSettings) {
     xValues,
     seriesValues
   };
+}
+
+function aggregateTimeSeriesRows(sheet: ParsedSheet, settings: ChartSettings) {
+  const seriesValues = new Map<string, Map<number, number>>();
+  const seriesField = settings.categoryField;
+
+  sheet.rows.forEach((row) => {
+    const xValue = coerceDateTime(row[settings.xField] ?? null);
+    const yValue = coerceNumber(row[settings.yField] ?? null);
+    if (xValue === null || yValue === null) {
+      return;
+    }
+
+    const seriesName = seriesField
+      ? formatDimensionValue(row[seriesField] ?? null)
+      : settings.yField;
+    if (!seriesValues.has(seriesName)) {
+      seriesValues.set(seriesName, new Map<number, number>());
+    }
+
+    const currentSeries = seriesValues.get(seriesName);
+    currentSeries?.set(xValue, (currentSeries.get(xValue) ?? 0) + yValue);
+  });
+
+  return seriesValues;
 }
 
 function buildChartOption(
@@ -416,6 +560,51 @@ function buildChartOption(
         type: "scatter",
         data,
         symbolSize: 8
+      }))
+    };
+  }
+
+  if (settings.chartType === "timeSeries") {
+    const seriesValues = aggregateTimeSeriesRows(sheet, settings);
+    const timestamps = Array.from(seriesValues.values()).flatMap((values) =>
+      Array.from(values.keys())
+    );
+    const axisGranularity = getTimeAxisGranularity(timestamps);
+
+    return {
+      ...baseOption,
+      tooltip: {
+        trigger: "axis",
+        formatter: formatTimeSeriesTooltip
+      },
+      grid: {
+        left: 52,
+        right: 56,
+        top: 56,
+        bottom: 72,
+        containLabel: true
+      },
+      xAxis: {
+        type: "time",
+        name: settings.xField,
+        nameLocation: "middle",
+        nameGap: 48,
+        axisLabel: {
+          hideOverlap: true,
+          formatter: (value: number) => formatDateLabel(value, axisGranularity)
+        }
+      },
+      yAxis: {
+        type: "value",
+        name: settings.yField
+      },
+      series: Array.from(seriesValues.entries()).map(([seriesName, values]) => ({
+        name: seriesName,
+        type: "line",
+        smooth: true,
+        data: Array.from(values.entries())
+          .sort(([leftDate], [rightDate]) => leftDate - rightDate)
+          .map(([xValue, yValue]) => [xValue, yValue])
       }))
     };
   }
@@ -767,6 +956,7 @@ function App() {
             <option value="pie">Pie</option>
             <option value="scatter">Scatter</option>
             <option value="stackedBar">Stacked bar</option>
+            <option value="timeSeries">Time series</option>
           </select>
         </label>
         <label>
