@@ -29,6 +29,12 @@ button {
   border: 0;
 }
 
+button:disabled,
+select:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 260px minmax(420px, 1fr) 280px;
@@ -86,6 +92,15 @@ p,
   cursor: pointer;
 }
 
+.secondary-button {
+  min-height: 38px;
+  border: 1px solid #c6ceda;
+  border-radius: 6px;
+  color: #172033;
+  background: #ffffff;
+  cursor: pointer;
+}
+
 .file-input {
   display: none;
 }
@@ -98,6 +113,26 @@ p,
   background: #fff1f1;
   font-size: 13px;
   line-height: 1.4;
+}
+
+.warning-message,
+.info-message {
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.warning-message {
+  border: 1px solid #f4d58a;
+  color: #744b00;
+  background: #fff8e6;
+}
+
+.info-message {
+  border: 1px solid #b9d2f6;
+  color: #1d4f91;
+  background: #eef6ff;
 }
 
 .panel,
@@ -245,6 +280,26 @@ p,
 .chart {
   flex: 1;
   min-height: 240px;
+}
+
+.chart-message {
+  margin: 0 18px 14px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.chart-message.error {
+  border: 1px solid #f0b8b8;
+  color: #9f1d1d;
+  background: #fff1f1;
+}
+
+.chart-message.warning {
+  border: 1px solid #f4d58a;
+  color: #744b00;
+  background: #fff8e6;
 }
 
 .settings label {

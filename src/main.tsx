@@ -1,14 +1,17 @@
-import React, { ChangeEvent, useMemo, useRef, useState } from "react";
+import React, { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import ReactECharts from "echarts-for-react";
 import * as XLSX from "xlsx";
 import "./styles.css";
 
 const PREVIEW_ROW_LIMIT = 200;
+const SETTINGS_STORAGE_KEY = "excel-visual-tool.chart-settings.v1";
+const RECENT_FILE_STORAGE_KEY = "excel-visual-tool.recent-file.v1";
 
 type CellValue = string | number | boolean | Date | null;
 
 type FieldType = "text" | "number" | "date" | "mixed" | "empty";
+type ChartType = "bar" | "line" | "pie" | "scatter" | "stackedBar";
 
 type ParsedSheet = {
   name: string;
@@ -28,33 +31,34 @@ type WorkbookState = {
   activeSheetName: string;
 };
 
-const sampleChartOption = {
-  tooltip: {
-    trigger: "axis"
-  },
-  grid: {
-    left: 40,
-    right: 24,
-    top: 36,
-    bottom: 36
-  },
-  xAxis: {
-    type: "category",
-    data: ["Jan", "Feb", "Mar", "Apr", "May", "Jun"]
-  },
-  yAxis: {
-    type: "value"
-  },
-  series: [
-    {
-      name: "Sales",
-      type: "bar",
-      data: [120, 180, 150, 240, 210, 280],
-      itemStyle: {
-        color: "#2563eb"
-      }
-    }
-  ]
+type ChartSettings = {
+  chartType: ChartType;
+  xField: string;
+  yField: string;
+  categoryField: string;
+};
+
+type ChartValidation = {
+  valid: boolean;
+  message: string;
+  warnings: string[];
+};
+
+type ChartOption = Record<string, unknown>;
+
+const DEFAULT_CHART_SETTINGS: ChartSettings = {
+  chartType: "bar",
+  xField: "",
+  yField: "",
+  categoryField: ""
+};
+
+const chartTypeLabels: Record<ChartType, string> = {
+  bar: "Bar",
+  line: "Line",
+  pie: "Pie",
+  scatter: "Scatter",
+  stackedBar: "Stacked bar"
 };
 
 function formatCellValue(value: CellValue) {
@@ -69,8 +73,26 @@ function formatCellValue(value: CellValue) {
   return String(value);
 }
 
+function formatDimensionValue(value: CellValue) {
+  const formattedValue = formatCellValue(value);
+  return formattedValue === "" ? "(blank)" : formattedValue;
+}
+
 function isEmptyCell(value: CellValue) {
   return value === null || value === "";
+}
+
+function coerceNumber(value: CellValue) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsedValue = Number(value);
+    return Number.isFinite(parsedValue) ? parsedValue : null;
+  }
+
+  return null;
 }
 
 function isDateLike(value: CellValue) {
@@ -128,6 +150,298 @@ function buildFieldMetadata(sheet: ParsedSheet): FieldMetadata[] {
       emptyRatio: values.length === 0 ? 1 : emptyCount / values.length
     };
   });
+}
+
+function loadChartSettings(): ChartSettings {
+  try {
+    const storedSettings = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (!storedSettings) {
+      return DEFAULT_CHART_SETTINGS;
+    }
+
+    const parsedSettings = JSON.parse(storedSettings) as Partial<ChartSettings>;
+    const chartType =
+      parsedSettings.chartType && parsedSettings.chartType in chartTypeLabels
+        ? parsedSettings.chartType
+        : DEFAULT_CHART_SETTINGS.chartType;
+
+    return {
+      chartType,
+      xField: parsedSettings.xField ?? "",
+      yField: parsedSettings.yField ?? "",
+      categoryField: parsedSettings.categoryField ?? ""
+    };
+  } catch {
+    return DEFAULT_CHART_SETTINGS;
+  }
+}
+
+function fieldExists(metadata: FieldMetadata[], fieldName: string) {
+  return metadata.some((field) => field.name === fieldName);
+}
+
+function getFieldMetadata(metadata: FieldMetadata[], fieldName: string) {
+  return metadata.find((field) => field.name === fieldName) ?? null;
+}
+
+function validateDimensionField(
+  metadata: FieldMetadata[],
+  fieldName: string,
+  label: string
+): string | null {
+  if (!fieldName) {
+    return `Select a ${label} field.`;
+  }
+
+  const field = getFieldMetadata(metadata, fieldName);
+  if (!field) {
+    return `${label} field is not available in this worksheet.`;
+  }
+
+  if (field.type === "empty") {
+    return `${label} field cannot be empty.`;
+  }
+
+  return null;
+}
+
+function validateNumericField(
+  metadata: FieldMetadata[],
+  fieldName: string,
+  label: string
+): string | null {
+  const dimensionError = validateDimensionField(metadata, fieldName, label);
+  if (dimensionError) {
+    return dimensionError;
+  }
+
+  const field = getFieldMetadata(metadata, fieldName);
+  if (field?.type !== "number") {
+    return `${label} field must be numeric.`;
+  }
+
+  return null;
+}
+
+function buildChartValidation(
+  sheet: ParsedSheet | null,
+  metadata: FieldMetadata[],
+  settings: ChartSettings
+): ChartValidation {
+  if (!sheet) {
+    return {
+      valid: false,
+      message: "Open an .xlsx workbook to build a chart.",
+      warnings: []
+    };
+  }
+
+  if (sheet.headers.length === 0 || sheet.rows.length === 0) {
+    return {
+      valid: false,
+      message: "This worksheet has no rows available for charting.",
+      warnings: []
+    };
+  }
+
+  const warnings: string[] = [];
+  const yLabel = settings.chartType === "scatter" ? "Y axis" : "value";
+  const xError =
+    settings.chartType === "scatter"
+      ? validateNumericField(metadata, settings.xField, "X axis")
+      : validateDimensionField(metadata, settings.xField, "X axis");
+  const yError = validateNumericField(metadata, settings.yField, yLabel);
+
+  if (xError || yError) {
+    return {
+      valid: false,
+      message: xError ?? yError ?? "Select valid chart fields.",
+      warnings
+    };
+  }
+
+  if (settings.chartType === "stackedBar") {
+    const categoryError = validateDimensionField(metadata, settings.categoryField, "category");
+    if (categoryError) {
+      return {
+        valid: false,
+        message: categoryError,
+        warnings
+      };
+    }
+  }
+
+  [settings.xField, settings.yField, settings.categoryField]
+    .filter(Boolean)
+    .forEach((fieldName) => {
+      const field = getFieldMetadata(metadata, fieldName);
+      if (field && field.emptyRatio > 0) {
+        warnings.push(`${field.name} has ${Math.round(field.emptyRatio * 100)}% empty cells.`);
+      }
+    });
+
+  return {
+    valid: true,
+    message: "",
+    warnings
+  };
+}
+
+function createBaseChartOption(settings: ChartSettings): ChartOption {
+  return {
+    color: ["#2563eb", "#0891b2", "#16a34a", "#f59e0b", "#dc2626", "#7c3aed", "#475569"],
+    tooltip: {
+      trigger: settings.chartType === "pie" ? "item" : "axis"
+    },
+    legend: {
+      type: "scroll",
+      top: 8
+    },
+    grid: {
+      left: 52,
+      right: 28,
+      top: 56,
+      bottom: 42,
+      containLabel: true
+    }
+  };
+}
+
+function aggregateRows(sheet: ParsedSheet, settings: ChartSettings) {
+  const xValues: string[] = [];
+  const seriesValues = new Map<string, Map<string, number>>();
+  const seriesField = settings.categoryField;
+
+  sheet.rows.forEach((row) => {
+    const rawXValue = row[settings.xField] ?? null;
+    const numericValue = coerceNumber(row[settings.yField] ?? null);
+    if (numericValue === null || isEmptyCell(rawXValue)) {
+      return;
+    }
+
+    const xValue = formatDimensionValue(rawXValue);
+    const seriesName = seriesField ? formatDimensionValue(row[seriesField] ?? null) : settings.yField;
+
+    if (!xValues.includes(xValue)) {
+      xValues.push(xValue);
+    }
+
+    if (!seriesValues.has(seriesName)) {
+      seriesValues.set(seriesName, new Map<string, number>());
+    }
+
+    const currentSeries = seriesValues.get(seriesName);
+    currentSeries?.set(xValue, (currentSeries.get(xValue) ?? 0) + numericValue);
+  });
+
+  return {
+    xValues,
+    seriesValues
+  };
+}
+
+function buildChartOption(
+  sheet: ParsedSheet | null,
+  settings: ChartSettings,
+  validation: ChartValidation
+): ChartOption {
+  if (!sheet || !validation.valid) {
+    return {
+      title: {
+        text: validation.message,
+        left: "center",
+        top: "middle",
+        textStyle: {
+          color: "#657084",
+          fontSize: 14,
+          fontWeight: 500
+        }
+      }
+    };
+  }
+
+  const baseOption = createBaseChartOption(settings);
+
+  if (settings.chartType === "pie") {
+    const { xValues, seriesValues } = aggregateRows(sheet, settings);
+    const values = seriesValues.get(settings.yField) ?? new Map<string, number>();
+    return {
+      ...baseOption,
+      tooltip: {
+        trigger: "item"
+      },
+      series: [
+        {
+          name: settings.yField,
+          type: "pie",
+          radius: ["35%", "68%"],
+          data: xValues.map((xValue) => ({
+            name: xValue,
+            value: values.get(xValue) ?? 0
+          }))
+        }
+      ]
+    };
+  }
+
+  if (settings.chartType === "scatter") {
+    const seriesField = settings.categoryField;
+    const groupedPoints = new Map<string, number[][]>();
+
+    sheet.rows.forEach((row) => {
+      const xValue = coerceNumber(row[settings.xField] ?? null);
+      const yValue = coerceNumber(row[settings.yField] ?? null);
+      if (xValue === null || yValue === null) {
+        return;
+      }
+
+    const seriesName = seriesField
+      ? formatDimensionValue(row[seriesField] ?? null)
+      : settings.yField;
+      groupedPoints.set(seriesName, [...(groupedPoints.get(seriesName) ?? []), [xValue, yValue]]);
+    });
+
+    return {
+      ...baseOption,
+      xAxis: {
+        type: "value",
+        name: settings.xField
+      },
+      yAxis: {
+        type: "value",
+        name: settings.yField
+      },
+      series: Array.from(groupedPoints.entries()).map(([seriesName, data]) => ({
+        name: seriesName,
+        type: "scatter",
+        data,
+        symbolSize: 8
+      }))
+    };
+  }
+
+  const { xValues, seriesValues } = aggregateRows(sheet, settings);
+  const isStacked = settings.chartType === "stackedBar";
+  const seriesType = settings.chartType === "line" ? "line" : "bar";
+
+  return {
+    ...baseOption,
+    xAxis: {
+      type: "category",
+      data: xValues
+    },
+    yAxis: {
+      type: "value",
+      name: settings.yField
+    },
+    series: Array.from(seriesValues.entries()).map(([seriesName, values]) => ({
+      name: seriesName,
+      type: seriesType,
+      stack: isStacked ? "total" : undefined,
+      smooth: settings.chartType === "line",
+      data: xValues.map((xValue) => values.get(xValue) ?? 0)
+    }))
+  };
 }
 
 function normalizeHeaders(headerRow: CellValue[], columnCount: number) {
@@ -200,10 +514,13 @@ function parseWorkbook(fileName: string, buffer: ArrayBuffer): WorkbookState {
 
 function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const chartRef = useRef<ReactECharts>(null);
   const [workbookState, setWorkbookState] = useState<WorkbookState | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
-  const [xField, setXField] = useState("");
-  const [yField, setYField] = useState("");
+  const [chartSettings, setChartSettings] = useState<ChartSettings>(loadChartSettings);
+  const [recentFileName, setRecentFileName] = useState(
+    () => window.localStorage.getItem(RECENT_FILE_STORAGE_KEY) ?? ""
+  );
 
   const activeSheet = useMemo(() => {
     return (
@@ -215,10 +532,62 @@ function App() {
   const fieldMetadata = useMemo(() => {
     return activeSheet ? buildFieldMetadata(activeSheet) : [];
   }, [activeSheet]);
+  const chartValidation = useMemo(() => {
+    return buildChartValidation(activeSheet, fieldMetadata, chartSettings);
+  }, [activeSheet, fieldMetadata, chartSettings]);
+  const chartOption = useMemo(() => {
+    return buildChartOption(activeSheet, chartSettings, chartValidation);
+  }, [activeSheet, chartSettings, chartValidation]);
+  const hasRestoredMissingFields = useMemo(() => {
+    if (!activeSheet) {
+      return false;
+    }
+
+    return [chartSettings.xField, chartSettings.yField, chartSettings.categoryField]
+      .filter(Boolean)
+      .some((fieldName) => !fieldExists(fieldMetadata, fieldName));
+  }, [activeSheet, chartSettings, fieldMetadata]);
+
+  useEffect(() => {
+    window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(chartSettings));
+  }, [chartSettings]);
 
   function resetChartFields() {
-    setXField("");
-    setYField("");
+    setChartSettings((currentSettings) => ({
+      ...currentSettings,
+      xField: "",
+      yField: "",
+      categoryField: ""
+    }));
+  }
+
+  function updateChartSettings(nextSettings: Partial<ChartSettings>) {
+    setChartSettings((currentSettings) => ({
+      ...currentSettings,
+      ...nextSettings
+    }));
+  }
+
+  function handleExportPng() {
+    if (!chartValidation.valid) {
+      return;
+    }
+
+    const chartInstance = chartRef.current?.getEchartsInstance();
+    if (!chartInstance) {
+      return;
+    }
+
+    const imageUrl = chartInstance.getDataURL({
+      type: "png",
+      pixelRatio: 2,
+      backgroundColor: "#ffffff"
+    });
+    const downloadLink = document.createElement("a");
+    const fileBaseName = workbookState?.fileName.replace(/\.xlsx$/i, "") || "chart";
+    downloadLink.href = imageUrl;
+    downloadLink.download = `${fileBaseName}-${chartSettings.chartType}.png`;
+    downloadLink.click();
   }
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -241,7 +610,8 @@ function App() {
       const parsedWorkbook = parseWorkbook(file.name, buffer);
       setWorkbookState(parsedWorkbook);
       setErrorMessage("");
-      resetChartFields();
+      setRecentFileName(file.name);
+      window.localStorage.setItem(RECENT_FILE_STORAGE_KEY, file.name);
     } catch (error) {
       setWorkbookState(null);
       resetChartFields();
@@ -285,6 +655,9 @@ function App() {
           Open .xlsx
         </button>
         {errorMessage ? <div className="error-message">{errorMessage}</div> : null}
+        {!workbookState && recentFileName ? (
+          <div className="info-message">Recent file: {recentFileName}</div>
+        ) : null}
         <section className="panel">
           <h2>Worksheets</h2>
           {workbookState ? (
@@ -361,9 +734,19 @@ function App() {
         <div className="chart-area">
           <div className="section-header">
             <h2>Chart Preview</h2>
-            <span>ECharts ready</span>
+            <span>
+              {chartValidation.valid
+                ? chartTypeLabels[chartSettings.chartType]
+                : "Waiting for valid settings"}
+            </span>
           </div>
-          <ReactECharts option={sampleChartOption} className="chart" />
+          <ReactECharts ref={chartRef} option={chartOption} className="chart" notMerge />
+          {chartValidation.message ? (
+            <div className="chart-message error">{chartValidation.message}</div>
+          ) : null}
+          {chartValidation.warnings.length > 0 ? (
+            <div className="chart-message warning">{chartValidation.warnings.join(" ")}</div>
+          ) : null}
         </div>
       </section>
 
@@ -371,19 +754,27 @@ function App() {
         <h2>Chart Settings</h2>
         <label>
           Chart type
-          <select defaultValue="bar">
+          <select
+            value={chartSettings.chartType}
+            onChange={(event) =>
+              updateChartSettings({
+                chartType: event.target.value as ChartType
+              })
+            }
+          >
             <option value="bar">Bar</option>
             <option value="line">Line</option>
             <option value="pie">Pie</option>
             <option value="scatter">Scatter</option>
+            <option value="stackedBar">Stacked bar</option>
           </select>
         </label>
         <label>
           X axis
           <select
             disabled={fieldMetadata.length === 0}
-            value={xField}
-            onChange={(event) => setXField(event.target.value)}
+            value={fieldExists(fieldMetadata, chartSettings.xField) ? chartSettings.xField : ""}
+            onChange={(event) => updateChartSettings({ xField: event.target.value })}
           >
             <option value="">Select field</option>
             {fieldMetadata.map((field) => (
@@ -397,10 +788,31 @@ function App() {
           Y axis
           <select
             disabled={fieldMetadata.length === 0}
-            value={yField}
-            onChange={(event) => setYField(event.target.value)}
+            value={fieldExists(fieldMetadata, chartSettings.yField) ? chartSettings.yField : ""}
+            onChange={(event) => updateChartSettings({ yField: event.target.value })}
           >
             <option value="">Select field</option>
+            {fieldMetadata.map((field) => (
+              <option key={field.name} value={field.name}>
+                {field.name} {field.type === "number" ? "" : `(${field.type})`}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Category
+          <select
+            disabled={fieldMetadata.length === 0}
+            value={
+              fieldExists(fieldMetadata, chartSettings.categoryField)
+                ? chartSettings.categoryField
+                : ""
+            }
+            onChange={(event) => updateChartSettings({ categoryField: event.target.value })}
+          >
+            <option value="">
+              {chartSettings.chartType === "stackedBar" ? "Select field" : "None"}
+            </option>
             {fieldMetadata.map((field) => (
               <option key={field.name} value={field.name}>
                 {field.name}
@@ -408,6 +820,25 @@ function App() {
             ))}
           </select>
         </label>
+        {hasRestoredMissingFields ? (
+          <div className="info-message">
+            Saved settings include fields that are not in this worksheet.
+          </div>
+        ) : null}
+        {chartValidation.message ? (
+          <div className="error-message">{chartValidation.message}</div>
+        ) : null}
+        {chartValidation.warnings.length > 0 ? (
+          <div className="warning-message">{chartValidation.warnings.join(" ")}</div>
+        ) : null}
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={!chartValidation.valid}
+          onClick={handleExportPng}
+        >
+          Export PNG
+        </button>
         <section className="metadata-panel">
           <h2>Fields</h2>
           {fieldMetadata.length > 0 ? (
