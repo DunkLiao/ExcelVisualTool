@@ -16,7 +16,19 @@ const CSV_DECODER_CANDIDATES = ["utf-8", "big5", "utf-16le", "utf-16be"];
 type CellValue = string | number | boolean | Date | null;
 
 type FieldType = "text" | "number" | "date" | "mixed" | "empty";
-type ChartType = "bar" | "line" | "pie" | "scatter" | "stackedBar" | "timeSeries";
+type ChartType =
+  | "bar"
+  | "line"
+  | "pie"
+  | "scatter"
+  | "stackedBar"
+  | "timeSeries"
+  | "area"
+  | "horizontalBar"
+  | "radar"
+  | "treemap"
+  | "funnel"
+  | "gauge";
 
 type ParsedSheet = {
   name: string;
@@ -96,7 +108,13 @@ const chartTypeLabels: Record<ChartType, string> = {
   pie: "Pie",
   scatter: "Scatter",
   stackedBar: "Stacked bar",
-  timeSeries: "Time series"
+  timeSeries: "Time series",
+  area: "Area",
+  horizontalBar: "Horizontal bar",
+  radar: "Radar",
+  treemap: "Treemap",
+  funnel: "Funnel",
+  gauge: "Gauge"
 };
 
 function formatCellValue(value: CellValue) {
@@ -237,6 +255,16 @@ function formatTimeSeriesTooltip(params: TooltipParam | TooltipParam[]) {
   });
 
   return [formatDateLabel(rawDate as string | number), ...lines].join("<br/>");
+}
+
+function shouldUseItemTooltip(chartType: ChartType) {
+  return ["pie", "treemap", "funnel", "gauge"].includes(chartType);
+}
+
+function shouldUseCategorySeries(chartType: ChartType) {
+  return ["bar", "line", "stackedBar", "timeSeries", "area", "horizontalBar", "radar"].includes(
+    chartType
+  );
 }
 
 function inferFieldType(values: CellValue[]): FieldType {
@@ -417,7 +445,26 @@ function buildChartValidation(
     }
   }
 
-  [settings.xField, settings.yField, settings.categoryField]
+  if (settings.chartType === "radar" && settings.categoryField) {
+    const categoryError = validateDimensionField(metadata, settings.categoryField, "category");
+    if (categoryError) {
+      return {
+        valid: false,
+        message: categoryError,
+        warnings
+      };
+    }
+  }
+
+  const warningFields = [
+    settings.xField,
+    settings.yField,
+    shouldUseCategorySeries(settings.chartType) || settings.chartType === "scatter"
+      ? settings.categoryField
+      : ""
+  ];
+
+  warningFields
     .filter(Boolean)
     .forEach((fieldName) => {
       const field = getFieldMetadata(metadata, fieldName);
@@ -437,7 +484,7 @@ function createBaseChartOption(settings: ChartSettings): ChartOption {
   return {
     color: ["#2563eb", "#0891b2", "#16a34a", "#f59e0b", "#dc2626", "#7c3aed", "#475569"],
     tooltip: {
-      trigger: settings.chartType === "pie" ? "item" : "axis"
+      trigger: shouldUseItemTooltip(settings.chartType) ? "item" : "axis"
     },
     legend: {
       type: "scroll",
@@ -456,7 +503,7 @@ function createBaseChartOption(settings: ChartSettings): ChartOption {
 function aggregateRows(sheet: ParsedSheet, settings: ChartSettings) {
   const xValues: string[] = [];
   const seriesValues = new Map<string, Map<string, number>>();
-  const seriesField = settings.categoryField;
+  const seriesField = shouldUseCategorySeries(settings.chartType) ? settings.categoryField : "";
 
   sheet.rows.forEach((row) => {
     const rawXValue = row[settings.xField] ?? null;
@@ -488,9 +535,20 @@ function aggregateRows(sheet: ParsedSheet, settings: ChartSettings) {
   };
 }
 
+function sumSeriesValues(values: Map<string, number>) {
+  return Array.from(values.values()).reduce((sum, value) => sum + value, 0);
+}
+
+function getMaxSeriesValue(seriesValues: Map<string, Map<string, number>>) {
+  return Math.max(
+    0,
+    ...Array.from(seriesValues.values()).flatMap((values) => Array.from(values.values()))
+  );
+}
+
 function aggregateTimeSeriesRows(sheet: ParsedSheet, settings: ChartSettings) {
   const seriesValues = new Map<string, Map<number, number>>();
-  const seriesField = settings.categoryField;
+  const seriesField = shouldUseCategorySeries(settings.chartType) ? settings.categoryField : "";
 
   sheet.rows.forEach((row) => {
     const xValue = coerceDateTime(row[settings.xField] ?? null);
@@ -557,6 +615,90 @@ function buildChartOption(
     };
   }
 
+  if (settings.chartType === "treemap") {
+    const { xValues, seriesValues } = aggregateRows(sheet, settings);
+    const values = seriesValues.get(settings.yField) ?? new Map<string, number>();
+    return {
+      ...baseOption,
+      tooltip: {
+        trigger: "item"
+      },
+      series: [
+        {
+          name: settings.yField,
+          type: "treemap",
+          roam: false,
+          breadcrumb: {
+            show: false
+          },
+          data: xValues.map((xValue) => ({
+            name: xValue,
+            value: values.get(xValue) ?? 0
+          }))
+        }
+      ]
+    };
+  }
+
+  if (settings.chartType === "funnel") {
+    const { xValues, seriesValues } = aggregateRows(sheet, settings);
+    const values = seriesValues.get(settings.yField) ?? new Map<string, number>();
+    return {
+      ...baseOption,
+      tooltip: {
+        trigger: "item"
+      },
+      series: [
+        {
+          name: settings.yField,
+          type: "funnel",
+          left: "10%",
+          top: 64,
+          bottom: 24,
+          width: "80%",
+          sort: "descending",
+          data: xValues.map((xValue) => ({
+            name: xValue,
+            value: values.get(xValue) ?? 0
+          }))
+        }
+      ]
+    };
+  }
+
+  if (settings.chartType === "gauge") {
+    const { seriesValues } = aggregateRows(sheet, settings);
+    const value = sumSeriesValues(seriesValues.get(settings.yField) ?? new Map<string, number>());
+    const maxValue = value <= 100 ? 100 : Math.ceil((value * 1.2) / 10) * 10;
+    return {
+      ...baseOption,
+      tooltip: {
+        trigger: "item"
+      },
+      series: [
+        {
+          name: settings.yField,
+          type: "gauge",
+          min: 0,
+          max: maxValue,
+          progress: {
+            show: true
+          },
+          detail: {
+            valueAnimation: true,
+            formatter: "{value}"
+          },
+          data: [
+            {
+              name: settings.yField,
+              value
+            }
+          ]
+        }
+      ]
+    };
+  }
+
   if (settings.chartType === "scatter") {
     const seriesField = settings.categoryField;
     const groupedPoints = new Map<string, number[][]>();
@@ -568,9 +710,9 @@ function buildChartOption(
         return;
       }
 
-    const seriesName = seriesField
-      ? formatDimensionValue(row[seriesField] ?? null)
-      : settings.yField;
+      const seriesName = seriesField
+        ? formatDimensionValue(row[seriesField] ?? null)
+        : settings.yField;
       groupedPoints.set(seriesName, [...(groupedPoints.get(seriesName) ?? []), [xValue, yValue]]);
     });
 
@@ -639,8 +781,60 @@ function buildChartOption(
   }
 
   const { xValues, seriesValues } = aggregateRows(sheet, settings);
+  if (settings.chartType === "radar") {
+    const maxValue = getMaxSeriesValue(seriesValues);
+    return {
+      ...baseOption,
+      tooltip: {
+        trigger: "item"
+      },
+      radar: {
+        indicator: xValues.map((xValue) => ({
+          name: xValue,
+          max: maxValue <= 0 ? 100 : Math.ceil(maxValue * 1.2)
+        }))
+      },
+      series: [
+        {
+          name: settings.yField,
+          type: "radar",
+          data: Array.from(seriesValues.entries()).map(([seriesName, values]) => ({
+            name: seriesName,
+            value: xValues.map((xValue) => values.get(xValue) ?? 0)
+          }))
+        }
+      ]
+    };
+  }
+
+  if (settings.chartType === "horizontalBar") {
+    return {
+      ...baseOption,
+      grid: {
+        left: 96,
+        right: 28,
+        top: 56,
+        bottom: 42,
+        containLabel: true
+      },
+      xAxis: {
+        type: "value",
+        name: settings.yField
+      },
+      yAxis: {
+        type: "category",
+        data: xValues
+      },
+      series: Array.from(seriesValues.entries()).map(([seriesName, values]) => ({
+        name: seriesName,
+        type: "bar",
+        data: xValues.map((xValue) => values.get(xValue) ?? 0)
+      }))
+    };
+  }
+
   const isStacked = settings.chartType === "stackedBar";
-  const seriesType = settings.chartType === "line" ? "line" : "bar";
+  const seriesType = settings.chartType === "line" || settings.chartType === "area" ? "line" : "bar";
 
   return {
     ...baseOption,
@@ -656,7 +850,8 @@ function buildChartOption(
       name: seriesName,
       type: seriesType,
       stack: isStacked ? "total" : undefined,
-      smooth: settings.chartType === "line",
+      smooth: settings.chartType === "line" || settings.chartType === "area",
+      areaStyle: settings.chartType === "area" ? {} : undefined,
       data: xValues.map((xValue) => values.get(xValue) ?? 0)
     }))
   };
@@ -1081,6 +1276,12 @@ function App() {
             <option value="scatter">Scatter</option>
             <option value="stackedBar">Stacked bar</option>
             <option value="timeSeries">Time series</option>
+            <option value="area">Area</option>
+            <option value="horizontalBar">Horizontal bar</option>
+            <option value="radar">Radar</option>
+            <option value="treemap">Treemap</option>
+            <option value="funnel">Funnel</option>
+            <option value="gauge">Gauge</option>
           </select>
         </label>
         <label>
