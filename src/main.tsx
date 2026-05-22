@@ -10,7 +10,7 @@ const SETTINGS_STORAGE_KEY = "excel-visual-tool.chart-settings.v1";
 const RECENT_FILE_STORAGE_KEY = "excel-visual-tool.recent-file.v1";
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const SUPPORTED_FILE_EXTENSIONS = [".xlsx", ".xls", ".csv"];
-const SUPPORTED_FILE_LABEL = ".xlsx, .xls, or .csv";
+const SUPPORTED_FILE_LABEL = ".xlsx、.xls 或 .csv";
 const CSV_DECODER_CANDIDATES = ["utf-8", "big5", "utf-16le", "utf-16be"];
 
 type CellValue = string | number | boolean | Date | null;
@@ -103,18 +103,26 @@ function installFrontendLogging() {
 }
 
 const chartTypeLabels: Record<ChartType, string> = {
-  bar: "Bar",
-  line: "Line",
-  pie: "Pie",
-  scatter: "Scatter",
-  stackedBar: "Stacked bar",
-  timeSeries: "Time series",
-  area: "Area",
-  horizontalBar: "Horizontal bar",
-  radar: "Radar",
-  treemap: "Treemap",
-  funnel: "Funnel",
-  gauge: "Gauge"
+  bar: "長條圖",
+  line: "折線圖",
+  pie: "圓餅圖",
+  scatter: "散佈圖",
+  stackedBar: "堆疊長條圖",
+  timeSeries: "時間序列圖",
+  area: "面積圖",
+  horizontalBar: "水平長條圖",
+  radar: "雷達圖",
+  treemap: "矩形式樹狀圖",
+  funnel: "漏斗圖",
+  gauge: "儀表圖"
+};
+
+const fieldTypeLabels: Record<FieldType, string> = {
+  text: "文字",
+  number: "數字",
+  date: "日期",
+  mixed: "混合",
+  empty: "空白"
 };
 
 function formatCellValue(value: CellValue) {
@@ -131,7 +139,7 @@ function formatCellValue(value: CellValue) {
 
 function formatDimensionValue(value: CellValue) {
   const formattedValue = formatCellValue(value);
-  return formattedValue === "" ? "(blank)" : formattedValue;
+  return formattedValue === "" ? "(空白)" : formattedValue;
 }
 
 function isEmptyCell(value: CellValue) {
@@ -344,16 +352,16 @@ function validateDimensionField(
   label: string
 ): string | null {
   if (!fieldName) {
-    return `Select a ${label} field.`;
+    return `請選擇${label}欄位。`;
   }
 
   const field = getFieldMetadata(metadata, fieldName);
   if (!field) {
-    return `${label} field is not available in this worksheet.`;
+    return `${label}欄位不存在於目前工作表。`;
   }
 
   if (field.type === "empty") {
-    return `${label} field cannot be empty.`;
+    return `${label}欄位不能為空白。`;
   }
 
   return null;
@@ -371,7 +379,7 @@ function validateNumericField(
 
   const field = getFieldMetadata(metadata, fieldName);
   if (field?.type !== "number") {
-    return `${label} field must be numeric.`;
+    return `${label}欄位必須是數值。`;
   }
 
   return null;
@@ -389,7 +397,7 @@ function validateDateField(
 
   const field = getFieldMetadata(metadata, fieldName);
   if (field?.type !== "date") {
-    return `${label} field must be date/time.`;
+    return `${label}欄位必須是日期或時間。`;
   }
 
   return null;
@@ -403,7 +411,7 @@ function buildChartValidation(
   if (!sheet) {
     return {
       valid: false,
-      message: "Open a supported spreadsheet file to build a chart.",
+      message: "請開啟支援的試算表檔案以建立圖表。",
       warnings: []
     };
   }
@@ -411,31 +419,31 @@ function buildChartValidation(
   if (sheet.headers.length === 0 || sheet.rows.length === 0) {
     return {
       valid: false,
-      message: "This worksheet has no rows available for charting.",
+      message: "此工作表沒有可用於繪製圖表的資料列。",
       warnings: []
     };
   }
 
   const warnings: string[] = [];
-  const yLabel = settings.chartType === "scatter" ? "Y axis" : "value";
+  const yLabel = settings.chartType === "scatter" ? "Y 軸" : "數值";
   const xError =
     settings.chartType === "scatter"
-      ? validateNumericField(metadata, settings.xField, "X axis")
+      ? validateNumericField(metadata, settings.xField, "X 軸")
       : settings.chartType === "timeSeries"
-        ? validateDateField(metadata, settings.xField, "X axis")
-      : validateDimensionField(metadata, settings.xField, "X axis");
+        ? validateDateField(metadata, settings.xField, "X 軸")
+      : validateDimensionField(metadata, settings.xField, "X 軸");
   const yError = validateNumericField(metadata, settings.yField, yLabel);
 
   if (xError || yError) {
     return {
       valid: false,
-      message: xError ?? yError ?? "Select valid chart fields.",
+      message: xError ?? yError ?? "請選擇有效的圖表欄位。",
       warnings
     };
   }
 
   if (settings.chartType === "stackedBar") {
-    const categoryError = validateDimensionField(metadata, settings.categoryField, "category");
+    const categoryError = validateDimensionField(metadata, settings.categoryField, "分類");
     if (categoryError) {
       return {
         valid: false,
@@ -446,7 +454,7 @@ function buildChartValidation(
   }
 
   if (settings.chartType === "radar" && settings.categoryField) {
-    const categoryError = validateDimensionField(metadata, settings.categoryField, "category");
+    const categoryError = validateDimensionField(metadata, settings.categoryField, "分類");
     if (categoryError) {
       return {
         valid: false,
@@ -469,7 +477,7 @@ function buildChartValidation(
     .forEach((fieldName) => {
       const field = getFieldMetadata(metadata, fieldName);
       if (field && field.emptyRatio > 0) {
-        warnings.push(`${field.name} has ${Math.round(field.emptyRatio * 100)}% empty cells.`);
+        warnings.push(`${field.name} 有 ${Math.round(field.emptyRatio * 100)}% 的空白儲存格。`);
       }
     });
 
@@ -864,8 +872,8 @@ function normalizeHeaders(headerRow: CellValue[], columnCount: number) {
     const rawHeader = headerRow[index];
     const baseName =
       rawHeader === null || rawHeader === ""
-        ? `Column ${index + 1}`
-        : String(rawHeader).trim() || `Column ${index + 1}`;
+        ? `欄 ${index + 1}`
+        : String(rawHeader).trim() || `欄 ${index + 1}`;
     const existingCount = usedNames.get(baseName) ?? 0;
     usedNames.set(baseName, existingCount + 1);
 
@@ -975,7 +983,7 @@ function parseWorkbook(fileName: string, content: ArrayBuffer | string): Workboo
   );
 
   if (sheets.length === 0) {
-    throw new Error("No worksheets found in this workbook.");
+    throw new Error("此活頁簿中找不到工作表。");
   }
 
   return {
@@ -1060,7 +1068,7 @@ function App() {
 
     const chartInstance = chartRef.current?.getEchartsInstance();
     if (!chartInstance) {
-      setExportErrorMessage("Chart is not ready yet.");
+      setExportErrorMessage("圖表尚未準備完成。");
       return;
     }
 
@@ -1079,16 +1087,16 @@ function App() {
       const imageBytes = Array.from(new Uint8Array(imageBuffer));
       const fileBaseName = workbookState
         ? stripSupportedSpreadsheetExtension(workbookState.fileName)
-        : "chart";
+        : "圖表";
       const savedPath = await invoke<SaveChartPngResult>("save_chart_png", {
-        fileName: `${fileBaseName}-${chartSettings.chartType}.png`,
+        fileName: `${fileBaseName}-${chartTypeLabels[chartSettings.chartType]}.png`,
         imageBytes
       });
 
-      setExportMessage(`Saved to ${savedPath}`);
+      setExportMessage(`已儲存至 ${savedPath}`);
     } catch (error) {
       writeAppLog("error", `Unable to export PNG: ${describeError(error)}`);
-      setExportErrorMessage(error instanceof Error ? error.message : "Unable to export PNG.");
+      setExportErrorMessage("無法匯出 PNG。");
     } finally {
       setIsExporting(false);
     }
@@ -1102,7 +1110,7 @@ function App() {
     }
 
     if (!isSupportedSpreadsheetFile(file.name)) {
-      setErrorMessage(`Only ${SUPPORTED_FILE_LABEL} files are supported.`);
+      setErrorMessage(`僅支援 ${SUPPORTED_FILE_LABEL} 檔案。`);
       setWorkbookState(null);
       resetChartFields();
       event.target.value = "";
@@ -1123,7 +1131,7 @@ function App() {
       setWorkbookState(null);
       resetChartFields();
       writeAppLog("error", `Unable to parse workbook ${file.name}: ${describeError(error)}`);
-      setErrorMessage(error instanceof Error ? error.message : "Unable to parse this workbook.");
+      setErrorMessage("無法解析此活頁簿。");
     } finally {
       event.target.value = "";
     }
@@ -1145,8 +1153,8 @@ function App() {
     <main className="app-shell">
       <aside className="sidebar">
         <div>
-          <h1>Excel Visual Tool</h1>
-          <p>{workbookState?.fileName ?? "Local workbook visualization workspace."}</p>
+          <h1>Excel 視覺化工具</h1>
+          <p>{workbookState?.fileName ?? "本機活頁簿視覺化工作區。"}</p>
         </div>
         <input
           ref={fileInputRef}
@@ -1160,14 +1168,14 @@ function App() {
           className="primary-button"
           onClick={() => fileInputRef.current?.click()}
         >
-          Open spreadsheet
+          開啟試算表
         </button>
         {errorMessage ? <div className="error-message">{errorMessage}</div> : null}
         {!workbookState && recentFileName ? (
-          <div className="info-message">Recent file: {recentFileName}</div>
+          <div className="info-message">最近檔案：{recentFileName}</div>
         ) : null}
         <section className="panel">
-          <h2>Worksheets</h2>
+          <h2>工作表</h2>
           {workbookState ? (
             <div className="worksheet-list">
               {workbookState.sheets.map((sheet) => (
@@ -1182,12 +1190,12 @@ function App() {
                   onClick={() => handleSheetChange(sheet.name)}
                 >
                   <span>{sheet.name}</span>
-                  <small>{sheet.rows.length} rows</small>
+                  <small>{sheet.rows.length} 筆資料列</small>
                 </button>
               ))}
             </div>
           ) : (
-            <div className="empty-state">No workbook selected</div>
+            <div className="empty-state">尚未選擇活頁簿</div>
           )}
         </section>
       </aside>
@@ -1195,13 +1203,13 @@ function App() {
       <section className="workspace">
         <div className="preview-area">
           <div className="section-header">
-            <h2>Data Preview</h2>
+            <h2>資料預覽</h2>
             <span>
               {activeSheet
-                ? `${Math.min(activeSheet.rows.length, PREVIEW_ROW_LIMIT)} of ${
+                ? `顯示 ${Math.min(activeSheet.rows.length, PREVIEW_ROW_LIMIT)} / ${
                     activeSheet.rows.length
-                  } rows`
-                : `First ${PREVIEW_ROW_LIMIT} rows`}
+                  } 筆資料列`
+                : `前 ${PREVIEW_ROW_LIMIT} 筆資料列`}
             </span>
           </div>
           {activeSheet && activeSheet.headers.length > 0 ? (
@@ -1225,15 +1233,15 @@ function App() {
                 </tbody>
               </table>
               {activeSheet.rows.length === 0 ? (
-                <div className="table-empty-note">This worksheet has headers but no data rows.</div>
+                <div className="table-empty-note">此工作表有標題列，但沒有資料列。</div>
               ) : null}
             </div>
           ) : (
             <div className="table-placeholder">
               <span>
                 {activeSheet
-                  ? "This worksheet is empty."
-                  : "Select an Excel file to preview worksheet rows."}
+                  ? "此工作表是空的。"
+                  : "請選擇 Excel 檔案以預覽工作表資料列。"}
               </span>
             </div>
           )}
@@ -1241,11 +1249,11 @@ function App() {
 
         <div className="chart-area">
           <div className="section-header">
-            <h2>Chart Preview</h2>
+            <h2>圖表預覽</h2>
             <span>
               {chartValidation.valid
                 ? chartTypeLabels[chartSettings.chartType]
-                : "Waiting for valid settings"}
+                : "等待有效設定"}
             </span>
           </div>
           <ReactECharts ref={chartRef} option={chartOption} className="chart" notMerge />
@@ -1259,9 +1267,9 @@ function App() {
       </section>
 
       <aside className="settings">
-        <h2>Chart Settings</h2>
+        <h2>圖表設定</h2>
         <label>
-          Chart type
+          圖表類型
           <select
             value={chartSettings.chartType}
             onChange={(event) =>
@@ -1270,28 +1278,28 @@ function App() {
               })
             }
           >
-            <option value="bar">Bar</option>
-            <option value="line">Line</option>
-            <option value="pie">Pie</option>
-            <option value="scatter">Scatter</option>
-            <option value="stackedBar">Stacked bar</option>
-            <option value="timeSeries">Time series</option>
-            <option value="area">Area</option>
-            <option value="horizontalBar">Horizontal bar</option>
-            <option value="radar">Radar</option>
-            <option value="treemap">Treemap</option>
-            <option value="funnel">Funnel</option>
-            <option value="gauge">Gauge</option>
+            <option value="bar">長條圖</option>
+            <option value="line">折線圖</option>
+            <option value="pie">圓餅圖</option>
+            <option value="scatter">散佈圖</option>
+            <option value="stackedBar">堆疊長條圖</option>
+            <option value="timeSeries">時間序列圖</option>
+            <option value="area">面積圖</option>
+            <option value="horizontalBar">水平長條圖</option>
+            <option value="radar">雷達圖</option>
+            <option value="treemap">矩形式樹狀圖</option>
+            <option value="funnel">漏斗圖</option>
+            <option value="gauge">儀表圖</option>
           </select>
         </label>
         <label>
-          X axis
+          X 軸
           <select
             disabled={fieldMetadata.length === 0}
             value={fieldExists(fieldMetadata, chartSettings.xField) ? chartSettings.xField : ""}
             onChange={(event) => updateChartSettings({ xField: event.target.value })}
           >
-            <option value="">Select field</option>
+            <option value="">選擇欄位</option>
             {fieldMetadata.map((field) => (
               <option key={field.name} value={field.name}>
                 {field.name}
@@ -1300,22 +1308,22 @@ function App() {
           </select>
         </label>
         <label>
-          Y axis
+          Y 軸
           <select
             disabled={fieldMetadata.length === 0}
             value={fieldExists(fieldMetadata, chartSettings.yField) ? chartSettings.yField : ""}
             onChange={(event) => updateChartSettings({ yField: event.target.value })}
           >
-            <option value="">Select field</option>
+            <option value="">選擇欄位</option>
             {fieldMetadata.map((field) => (
               <option key={field.name} value={field.name}>
-                {field.name} {field.type === "number" ? "" : `(${field.type})`}
+                {field.name} {field.type === "number" ? "" : `(${fieldTypeLabels[field.type]})`}
               </option>
             ))}
           </select>
         </label>
         <label>
-          Category
+          分類
           <select
             disabled={fieldMetadata.length === 0}
             value={
@@ -1326,7 +1334,7 @@ function App() {
             onChange={(event) => updateChartSettings({ categoryField: event.target.value })}
           >
             <option value="">
-              {chartSettings.chartType === "stackedBar" ? "Select field" : "None"}
+              {chartSettings.chartType === "stackedBar" ? "選擇欄位" : "無"}
             </option>
             {fieldMetadata.map((field) => (
               <option key={field.name} value={field.name}>
@@ -1337,7 +1345,7 @@ function App() {
         </label>
         {hasRestoredMissingFields ? (
           <div className="info-message">
-            Saved settings include fields that are not in this worksheet.
+            已儲存的設定包含目前工作表中不存在的欄位。
           </div>
         ) : null}
         {chartValidation.message ? (
@@ -1352,25 +1360,25 @@ function App() {
           disabled={!chartValidation.valid || isExporting}
           onClick={handleExportPng}
         >
-          {isExporting ? "Exporting..." : "Export PNG"}
+          {isExporting ? "匯出中..." : "匯出 PNG"}
         </button>
         {exportMessage ? <div className="info-message">{exportMessage}</div> : null}
         {exportErrorMessage ? <div className="error-message">{exportErrorMessage}</div> : null}
         <section className="metadata-panel">
-          <h2>Fields</h2>
+          <h2>欄位</h2>
           {fieldMetadata.length > 0 ? (
             <div className="field-list">
               {fieldMetadata.map((field) => (
                 <div className="field-row" key={field.name}>
                   <span>{field.name}</span>
                   <small>
-                    {field.type} · {Math.round(field.emptyRatio * 100)}% empty
+                    {fieldTypeLabels[field.type]} · {Math.round(field.emptyRatio * 100)}% 空白
                   </small>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="empty-state compact">No fields available</div>
+            <div className="empty-state compact">沒有可用欄位</div>
           )}
         </section>
       </aside>
