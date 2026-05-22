@@ -4,6 +4,7 @@ node_modules/
 # Frontend build output
 dist/
 .vite/
+portableapps/
 
 # Tauri/Rust build output
 src-tauri/target/

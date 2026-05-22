@@ -1,5 +1,6 @@
 import React, { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
+import { invoke } from "@tauri-apps/api/core";
 import ReactECharts from "echarts-for-react";
 import * as XLSX from "xlsx";
 import "./styles.css";
@@ -60,6 +61,30 @@ const DEFAULT_CHART_SETTINGS: ChartSettings = {
   yField: "",
   categoryField: ""
 };
+
+function describeError(error: unknown) {
+  if (error instanceof Error) {
+    return error.stack || error.message;
+  }
+
+  return String(error);
+}
+
+function writeAppLog(level: "info" | "warn" | "error", message: string) {
+  void invoke("write_app_log", { level, message }).catch(() => {
+    // Logging must never interrupt the UI.
+  });
+}
+
+function installFrontendLogging() {
+  window.addEventListener("error", (event) => {
+    writeAppLog("error", `Frontend error: ${event.message} at ${event.filename}:${event.lineno}`);
+  });
+
+  window.addEventListener("unhandledrejection", (event) => {
+    writeAppLog("error", `Unhandled promise rejection: ${describeError(event.reason)}`);
+  });
+}
 
 const chartTypeLabels: Record<ChartType, string> = {
   bar: "Bar",
@@ -804,6 +829,7 @@ function App() {
     } catch (error) {
       setWorkbookState(null);
       resetChartFields();
+      writeAppLog("error", `Unable to parse workbook ${file.name}: ${describeError(error)}`);
       setErrorMessage(error instanceof Error ? error.message : "Unable to parse this workbook.");
     } finally {
       event.target.value = "";
@@ -1050,6 +1076,8 @@ function App() {
     </main>
   );
 }
+
+installFrontendLogging();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

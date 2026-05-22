@@ -43,23 +43,15 @@ call npm.cmd run tauri dev
 exit /b %ERRORLEVEL%
 
 :build
-echo Building Tauri release executable...
-call npm.cmd run tauri build -- --no-bundle
-if errorlevel 1 goto fail
-echo.
-echo Build completed.
-echo Portable exe:
-echo   %CD%\src-tauri\target\release\excel-visual-tool.exe
-echo.
-echo Installer bundles are skipped by default because this command is for portable exe testing.
-exit /b 0
+call build.bat
+exit /b %ERRORLEVEL%
 
 :help
 echo Usage:
 echo   test.bat         Run npm build and cargo check
 echo   test.bat dev     Start Vite dev server
 echo   test.bat tauri   Start Tauri desktop app
-echo   test.bat build   Build release executable
+echo   test.bat build   Build release executable via build.bat
 exit /b 0
 
 :fail
