@@ -21,7 +21,8 @@ body {
 }
 
 button,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -136,6 +137,7 @@ p,
 }
 
 .panel,
+.sql-area,
 .preview-area,
 .chart-area,
 .metadata-panel {
@@ -209,12 +211,13 @@ p,
 
 .workspace {
   display: grid;
-  grid-template-rows: minmax(220px, 0.9fr) minmax(280px, 1.1fr);
+  grid-template-rows: auto minmax(200px, 0.9fr) minmax(280px, 1.1fr);
   gap: 20px;
   padding: 24px;
   min-width: 0;
 }
 
+.sql-area,
 .preview-area,
 .chart-area {
   display: flex;
@@ -231,6 +234,39 @@ p,
   gap: 12px;
   padding: 16px 18px;
   border-bottom: 1px solid #d8dee8;
+}
+
+.sql-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 14px 18px 18px;
+}
+
+.sql-editor textarea {
+  width: 100%;
+  min-height: 92px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid #c6ceda;
+  border-radius: 6px;
+  color: #172033;
+  background: #ffffff;
+  font-family:
+    "Cascadia Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.sql-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 112px;
+}
+
+.sql-editor .error-message {
+  grid-column: 1 / -1;
 }
 
 .table-placeholder {
@@ -348,6 +384,19 @@ p,
   }
 
   .workspace {
-    grid-template-rows: auto auto;
+    grid-template-rows: auto auto auto;
+  }
+
+  .sql-editor {
+    grid-template-columns: 1fr;
+  }
+
+  .sql-actions {
+    flex-direction: row;
+    width: 100%;
+  }
+
+  .sql-actions button {
+    flex: 1;
   }
 }

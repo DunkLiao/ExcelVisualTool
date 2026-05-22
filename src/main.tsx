@@ -2,6 +2,9 @@ import React, { ChangeEvent, useEffect, useMemo, useRef, useState } from "react"
 import ReactDOM from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
 import ReactECharts from "echarts-for-react";
+import initSqlJs from "sql.js";
+import type { QueryExecResult, SqlJsStatic, SqlValue } from "sql.js";
+import sqlWasmUrl from "sql.js/dist/sql-wasm.wasm?url";
 import * as XLSX from "xlsx";
 import "./styles.css";
 
@@ -12,6 +15,8 @@ const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const SUPPORTED_FILE_EXTENSIONS = [".xlsx", ".xls", ".csv"];
 const SUPPORTED_FILE_LABEL = ".xlsx、.xls 或 .csv";
 const CSV_DECODER_CANDIDATES = ["utf-8", "big5", "utf-16le", "utf-16be"];
+const DEFAULT_SQL_QUERY = "SELECT * FROM data";
+const SQL_TABLE_NAME = "data";
 
 type CellValue = string | number | boolean | Date | null;
 
@@ -1002,9 +1007,108 @@ function stripSupportedSpreadsheetExtension(fileName: string) {
   return fileName.replace(/\.(xlsx|xls|csv)$/i, "");
 }
 
+function quoteSqlIdentifier(identifier: string) {
+  return `"${identifier.replace(/"/g, '""')}"`;
+}
+
+function toSqlValue(value: CellValue): SqlValue {
+  if (value === null || value === "") {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return formatDateLabel(value);
+  }
+
+  if (typeof value === "boolean") {
+    return value ? 1 : 0;
+  }
+
+  return value;
+}
+
+function fromSqlValue(value: SqlValue): CellValue {
+  if (value instanceof Uint8Array) {
+    return new TextDecoder("utf-8").decode(value);
+  }
+
+  return value;
+}
+
+function validateSqlQuery(sqlText: string) {
+  const normalizedSql = sqlText.trim();
+  if (!normalizedSql) {
+    throw new Error("請輸入 SQL 查詢。");
+  }
+
+  if (!/^(select|with)\b/i.test(normalizedSql)) {
+    throw new Error("目前僅支援 SELECT 或 WITH 查詢。");
+  }
+
+  return normalizedSql;
+}
+
+function executeSqlQuery(sqlApi: SqlJsStatic, sheet: ParsedSheet, sqlText: string): ParsedSheet {
+  const normalizedSql = validateSqlQuery(sqlText);
+
+  if (sheet.headers.length === 0) {
+    return {
+      name: `${sheet.name} SQL`,
+      headers: [],
+      rows: []
+    };
+  }
+
+  const db = new sqlApi.Database();
+
+  try {
+    const tableName = quoteSqlIdentifier(SQL_TABLE_NAME);
+    const quotedHeaders = sheet.headers.map(quoteSqlIdentifier);
+    db.run(`CREATE TABLE ${tableName} (${quotedHeaders.join(", ")})`);
+
+    if (sheet.rows.length > 0) {
+      const placeholders = sheet.headers.map(() => "?").join(", ");
+      const insertStatement = db.prepare(
+        `INSERT INTO ${tableName} (${quotedHeaders.join(", ")}) VALUES (${placeholders})`
+      );
+
+      try {
+        sheet.rows.forEach((row) => {
+          insertStatement.run(sheet.headers.map((header) => toSqlValue(row[header] ?? null)));
+        });
+      } finally {
+        insertStatement.free();
+      }
+    }
+
+    const results: QueryExecResult[] = db.exec(normalizedSql);
+    const result = results[results.length - 1];
+    if (!result) {
+      throw new Error("SQL 查詢必須回傳結果集。");
+    }
+
+    return {
+      name: `${sheet.name} SQL`,
+      headers: result.columns,
+      rows: result.values.map((values) =>
+        result.columns.reduce<Record<string, CellValue>>((row, column, index) => {
+          row[column] = fromSqlValue(values[index] ?? null);
+          return row;
+        }, {})
+      )
+    };
+  } finally {
+    db.close();
+  }
+}
+
 function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chartRef = useRef<ReactECharts>(null);
+  const [sqlApi, setSqlApi] = useState<SqlJsStatic | null>(null);
+  const [sqlText, setSqlText] = useState(DEFAULT_SQL_QUERY);
+  const [sqlErrorMessage, setSqlErrorMessage] = useState("");
+  const [querySheet, setQuerySheet] = useState<ParsedSheet | null>(null);
   const [workbookState, setWorkbookState] = useState<WorkbookState | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [exportMessage, setExportMessage] = useState("");
@@ -1021,29 +1125,59 @@ function App() {
     );
   }, [workbookState]);
 
-  const previewRows = activeSheet?.rows.slice(0, PREVIEW_ROW_LIMIT) ?? [];
+  const displaySheet = querySheet ?? activeSheet;
+  const previewRows = displaySheet?.rows.slice(0, PREVIEW_ROW_LIMIT) ?? [];
   const fieldMetadata = useMemo(() => {
-    return activeSheet ? buildFieldMetadata(activeSheet) : [];
-  }, [activeSheet]);
+    return displaySheet ? buildFieldMetadata(displaySheet) : [];
+  }, [displaySheet]);
   const chartValidation = useMemo(() => {
-    return buildChartValidation(activeSheet, fieldMetadata, chartSettings);
-  }, [activeSheet, fieldMetadata, chartSettings]);
+    return buildChartValidation(displaySheet, fieldMetadata, chartSettings);
+  }, [displaySheet, fieldMetadata, chartSettings]);
   const chartOption = useMemo(() => {
-    return buildChartOption(activeSheet, chartSettings, chartValidation);
-  }, [activeSheet, chartSettings, chartValidation]);
+    return buildChartOption(displaySheet, chartSettings, chartValidation);
+  }, [displaySheet, chartSettings, chartValidation]);
   const hasRestoredMissingFields = useMemo(() => {
-    if (!activeSheet) {
+    if (!displaySheet) {
       return false;
     }
 
     return [chartSettings.xField, chartSettings.yField, chartSettings.categoryField]
       .filter(Boolean)
       .some((fieldName) => !fieldExists(fieldMetadata, fieldName));
-  }, [activeSheet, chartSettings, fieldMetadata]);
+  }, [displaySheet, chartSettings, fieldMetadata]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    initSqlJs({
+      locateFile: () => sqlWasmUrl
+    })
+      .then((loadedSqlApi) => {
+        if (isMounted) {
+          setSqlApi(loadedSqlApi);
+        }
+      })
+      .catch((error) => {
+        writeAppLog("error", `Unable to load SQL engine: ${describeError(error)}`);
+        if (isMounted) {
+          setSqlErrorMessage("無法載入 SQL 查詢引擎。");
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(chartSettings));
   }, [chartSettings]);
+
+  useEffect(() => {
+    setSqlText(DEFAULT_SQL_QUERY);
+    setSqlErrorMessage("");
+    setQuerySheet(activeSheet);
+  }, [activeSheet]);
 
   function resetChartFields() {
     setChartSettings((currentSettings) => ({
@@ -1059,6 +1193,29 @@ function App() {
       ...currentSettings,
       ...nextSettings
     }));
+  }
+
+  function handleSqlExecute() {
+    if (!activeSheet || !sqlApi) {
+      return;
+    }
+
+    try {
+      const nextQuerySheet = executeSqlQuery(sqlApi, activeSheet, sqlText);
+      setQuerySheet(nextQuerySheet);
+      setSqlErrorMessage("");
+      resetChartFields();
+    } catch (error) {
+      writeAppLog("warn", `SQL query failed: ${describeError(error)}`);
+      setSqlErrorMessage(error instanceof Error ? error.message : "SQL 查詢失敗。");
+    }
+  }
+
+  function handleSqlReset() {
+    setSqlText(DEFAULT_SQL_QUERY);
+    setSqlErrorMessage("");
+    setQuerySheet(activeSheet);
+    resetChartFields();
   }
 
   async function handleExportPng() {
@@ -1123,6 +1280,9 @@ function App() {
       const parsedWorkbook = parseWorkbook(file.name, content);
       setWorkbookState(parsedWorkbook);
       setErrorMessage("");
+      setSqlText(DEFAULT_SQL_QUERY);
+      setSqlErrorMessage("");
+      setQuerySheet(parsedWorkbook.sheets[0] ?? null);
       setExportMessage("");
       setExportErrorMessage("");
       setRecentFileName(file.name);
@@ -1201,46 +1361,84 @@ function App() {
       </aside>
 
       <section className="workspace">
+        <div className="sql-area">
+          <div className="section-header">
+            <h2>SQL 篩選</h2>
+            <span>
+              {displaySheet
+                ? `查詢結果 ${displaySheet.rows.length} / 原始 ${activeSheet?.rows.length ?? 0} 筆`
+                : "等待資料"}
+            </span>
+          </div>
+          <div className="sql-editor">
+            <textarea
+              value={sqlText}
+              disabled={!activeSheet}
+              spellCheck={false}
+              onChange={(event) => setSqlText(event.target.value)}
+            />
+            <div className="sql-actions">
+              <button
+                type="button"
+                className="primary-button"
+                disabled={!activeSheet || !sqlApi}
+                onClick={handleSqlExecute}
+              >
+                執行 SQL
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={!activeSheet}
+                onClick={handleSqlReset}
+              >
+                重設
+              </button>
+            </div>
+            {sqlErrorMessage ? <div className="error-message">{sqlErrorMessage}</div> : null}
+          </div>
+        </div>
+
         <div className="preview-area">
           <div className="section-header">
             <h2>資料預覽</h2>
             <span>
-              {activeSheet
-                ? `顯示 ${Math.min(activeSheet.rows.length, PREVIEW_ROW_LIMIT)} / ${
-                    activeSheet.rows.length
+              {displaySheet
+                ? `顯示 ${Math.min(displaySheet.rows.length, PREVIEW_ROW_LIMIT)} / ${
+                    displaySheet.rows.length
                   } 筆資料列`
                 : `前 ${PREVIEW_ROW_LIMIT} 筆資料列`}
             </span>
           </div>
-          {activeSheet && activeSheet.headers.length > 0 ? (
+          {displaySheet && displaySheet.headers.length > 0 ? (
             <div className="table-scroll">
               <table className="data-table">
                 <thead>
                   <tr>
-                    {activeSheet.headers.map((header) => (
+                    {displaySheet.headers.map((header) => (
                       <th key={header}>{header}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {previewRows.map((row, rowIndex) => (
-                    <tr key={`${activeSheet.name}-${rowIndex}`}>
-                      {activeSheet.headers.map((header) => (
+                    <tr key={`${displaySheet.name}-${rowIndex}`}>
+                      {displaySheet.headers.map((header) => (
                         <td key={header}>{formatCellValue(row[header] ?? null)}</td>
                       ))}
                     </tr>
                   ))}
                 </tbody>
               </table>
-              {activeSheet.rows.length === 0 ? (
-                <div className="table-empty-note">此工作表有標題列，但沒有資料列。</div>
+              {displaySheet.rows.length === 0 ? (
+                <div className="table-empty-note">目前查詢結果沒有資料列。</div>
               ) : null}
             </div>
           ) : (
             <div className="table-placeholder">
               <span>
-                {activeSheet
-                  ? "此工作表是空的。"
+                {displaySheet
+                  ? "目前查詢結果沒有可預覽的欄位。"
                   : "請選擇 Excel 檔案以預覽工作表資料列。"}
               </span>
             </div>
