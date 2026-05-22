@@ -236,6 +236,25 @@ p,
   border-bottom: 1px solid #d8dee8;
 }
 
+.section-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-width: 0;
+}
+
+.compact-button {
+  min-height: 32px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+.preview-message {
+  margin: 12px 18px 0;
+}
+
 .sql-editor {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

@@ -147,6 +147,19 @@ function formatDimensionValue(value: CellValue) {
   return formattedValue === "" ? "(空白)" : formattedValue;
 }
 
+function formatTsvCell(value: CellValue | string) {
+  return formatCellValue(value).replace(/[\t\r\n]+/g, " ");
+}
+
+function buildSheetTsv(sheet: ParsedSheet) {
+  const headerRow = sheet.headers.map(formatTsvCell).join("\t");
+  const dataRows = sheet.rows.map((row) =>
+    sheet.headers.map((header) => formatTsvCell(row[header] ?? null)).join("\t")
+  );
+
+  return [headerRow, ...dataRows].join("\n");
+}
+
 function isEmptyCell(value: CellValue) {
   return value === null || value === "";
 }
@@ -1132,6 +1145,8 @@ function App() {
   const [errorMessage, setErrorMessage] = useState("");
   const [exportMessage, setExportMessage] = useState("");
   const [exportErrorMessage, setExportErrorMessage] = useState("");
+  const [copyMessage, setCopyMessage] = useState("");
+  const [copyErrorMessage, setCopyErrorMessage] = useState("");
   const [isExporting, setIsExporting] = useState(false);
   const [chartSettings, setChartSettings] = useState<ChartSettings>(loadChartSettings);
   const [recentFileName, setRecentFileName] = useState(
@@ -1146,6 +1161,7 @@ function App() {
 
   const displaySheet = querySheet ?? activeSheet;
   const previewRows = displaySheet?.rows.slice(0, PREVIEW_ROW_LIMIT) ?? [];
+  const canCopyDisplaySheet = Boolean(displaySheet && displaySheet.headers.length > 0);
   const fieldMetadata = useMemo(() => {
     return displaySheet ? buildFieldMetadata(displaySheet) : [];
   }, [displaySheet]);
@@ -1214,10 +1230,16 @@ function App() {
     }));
   }
 
+  function clearCopyMessages() {
+    setCopyMessage("");
+    setCopyErrorMessage("");
+  }
+
   function handleSqlTextChange(nextSqlText: string) {
     setSqlText(nextSqlText);
     setSqlErrorMessage("");
     setQuerySheet(activeSheet);
+    clearCopyMessages();
   }
 
   function handleSqlExecute() {
@@ -1229,6 +1251,7 @@ function App() {
       const nextQuerySheet = executeSqlQuery(sqlApi, workbookState, activeSheet, sqlText);
       setQuerySheet(nextQuerySheet);
       setSqlErrorMessage("");
+      clearCopyMessages();
       resetChartFields();
     } catch (error) {
       writeAppLog("warn", `SQL query failed: ${describeError(error)}`);
@@ -1240,7 +1263,29 @@ function App() {
     setSqlText(DEFAULT_SQL_QUERY);
     setSqlErrorMessage("");
     setQuerySheet(activeSheet);
+    clearCopyMessages();
     resetChartFields();
+  }
+
+  async function handleCopyQueryResult() {
+    if (!displaySheet || displaySheet.headers.length === 0) {
+      return;
+    }
+
+    setCopyMessage("");
+    setCopyErrorMessage("");
+
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard API is unavailable.");
+      }
+
+      await navigator.clipboard.writeText(buildSheetTsv(displaySheet));
+      setCopyMessage(`已複製 ${displaySheet.rows.length} 筆資料列`);
+    } catch (error) {
+      writeAppLog("warn", `Unable to copy query result: ${describeError(error)}`);
+      setCopyErrorMessage("無法複製資料。請確認剪貼簿權限。");
+    }
   }
 
   async function handleExportPng() {
@@ -1308,6 +1353,7 @@ function App() {
       setSqlText(DEFAULT_SQL_QUERY);
       setSqlErrorMessage("");
       setQuerySheet(parsedWorkbook.sheets[0] ?? null);
+      clearCopyMessages();
       setExportMessage("");
       setExportErrorMessage("");
       setRecentFileName(file.name);
@@ -1332,6 +1378,7 @@ function App() {
         : currentState
     );
     resetChartFields();
+    clearCopyMessages();
   }
 
   return (
@@ -1433,14 +1480,28 @@ function App() {
         <div className="preview-area">
           <div className="section-header">
             <h2>資料預覽</h2>
-            <span>
-              {displaySheet
-                ? `顯示 ${Math.min(displaySheet.rows.length, PREVIEW_ROW_LIMIT)} / ${
-                    displaySheet.rows.length
-                  } 筆資料列`
-                : `前 ${PREVIEW_ROW_LIMIT} 筆資料列`}
-            </span>
+            <div className="section-header-actions">
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                disabled={!canCopyDisplaySheet}
+                onClick={handleCopyQueryResult}
+              >
+                複製資料
+              </button>
+              <span>
+                {displaySheet
+                  ? `顯示 ${Math.min(displaySheet.rows.length, PREVIEW_ROW_LIMIT)} / ${
+                      displaySheet.rows.length
+                    } 筆資料列`
+                  : `前 ${PREVIEW_ROW_LIMIT} 筆資料列`}
+              </span>
+            </div>
           </div>
+          {copyMessage ? <div className="info-message preview-message">{copyMessage}</div> : null}
+          {copyErrorMessage ? (
+            <div className="error-message preview-message">{copyErrorMessage}</div>
+          ) : null}
           {displaySheet && displaySheet.headers.length > 0 ? (
             <div className="table-scroll">
               <table className="data-table">
