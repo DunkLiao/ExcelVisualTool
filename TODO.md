@@ -4,7 +4,7 @@
 
 - [x] 建立 `Tauri + React + TypeScript` 專案。
 - [x] 加入 ECharts 作為圖表渲染套件。
-- [x] 加入 SheetJS 類套件，用於前端解析 `.xlsx`。
+- [x] 加入 SheetJS 類套件，用於前端解析 `.xlsx`、`.xls` 與 `.csv`。
 - [x] 確認第一版不加入 Microsoft Excel、Python、pandas、VBA、COM automation 或雲端上傳依賴。
 - [x] 設定 Windows portable build 為主要發佈目標。
 - [x] 規劃 installer 作為第二種包裝，用於 WebView2 Runtime、捷徑與後續更新。
@@ -12,6 +12,8 @@
 ## 2. Excel 檔案讀取與解析
 
 - [x] 支援使用者開啟本機 `.xlsx` 檔案。
+- [x] 支援使用者開啟本機 `.xls` 檔案。
+- [x] 支援使用者開啟本機 `.csv` 檔案。
 - [x] 前端讀取 Excel 檔案 binary。
 - [x] 使用 SheetJS 解析 workbook。
 - [x] 解析工作表清單。
@@ -72,10 +74,13 @@
 - [x] 建立缺值與混合型態資料 Excel，用於驗證欄位推斷與錯誤提示。
 - [x] 建立多工作表 Excel，用於驗證 sheet 切換與設定重置。
 - [x] 建立中文欄位與中文分類資料 Excel，用於驗證中文圖表與 PNG 匯出。
+- [x] 建立中文欄位 CSV，用於驗證 `.csv` 匯入、欄位推斷與圖表產生。
 
 ## 9. 驗證情境
 
 - [x] 可開啟 `.xlsx`。
+- [x] 可開啟 `.xls`。
+- [x] 可開啟 `.csv`。
 - [x] 可切換工作表。
 - [x] 預覽表不因大量資料卡死。
 - [x] 每種圖表類型可正常生成。
@@ -106,3 +111,11 @@
 - [x] 不做大型資料效能最佳化。
 - [x] 不做自然語言問答。
 - [x] 不做 AI 自動分析。
+
+## 12. 第二版優化事項
+
+- [x] 支援 `.xls`。
+- [x] 支援 `.csv`。
+- [x] 匯入 CSV 可自動支援 UTF-8、Big5/CP950 與 UTF-16 等主流繁體中文編碼。
+- [x] 保證不修改原始 Excel 檔案，因此原檔中的高度複雜格式會保留在原始檔內。
+- [x] 明確說明工具內資料預覽只呈現資料值，不承諾完整重建 Excel 視覺格式。

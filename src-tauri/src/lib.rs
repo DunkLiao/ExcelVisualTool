@@ -12,7 +12,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![write_app_log])
+        .invoke_handler(tauri::generate_handler![write_app_log, save_chart_png])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -20,6 +20,24 @@ pub fn run() {
 #[tauri::command]
 fn write_app_log(level: String, message: String) -> Result<(), String> {
     write_log_line(&level, &message).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn save_chart_png(file_name: String, image_bytes: Vec<u8>) -> Result<String, String> {
+    if image_bytes.is_empty() {
+        return Err("PNG image data is empty.".to_string());
+    }
+
+    let export_dir = app_base_dir().join("exports");
+    fs::create_dir_all(&export_dir).map_err(|error| error.to_string())?;
+
+    let safe_file_name = sanitize_file_name(&file_name);
+    let export_path = unique_export_path(export_dir, &safe_file_name);
+    fs::write(&export_path, image_bytes).map_err(|error| error.to_string())?;
+
+    write_log_line("INFO", &format!("Exported chart PNG to {}", export_path.display()))
+        .map_err(|error| error.to_string())?;
+    Ok(export_path.display().to_string())
 }
 
 fn init_file_logging() {
@@ -66,10 +84,50 @@ fn write_log_line(level: &str, message: &str) -> std::io::Result<()> {
 }
 
 fn app_log_path() -> PathBuf {
+    app_base_dir().join("logs").join("app.log")
+}
+
+fn app_base_dir() -> PathBuf {
     std::env::current_exe()
         .ok()
         .and_then(|exe_path| exe_path.parent().map(|parent| parent.to_path_buf()))
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
-        .join("logs")
-        .join("app.log")
+}
+
+fn sanitize_file_name(file_name: &str) -> String {
+    let sanitized = file_name
+        .chars()
+        .map(|character| match character {
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' | '\0'..='\u{1f}' => '_',
+            _ => character,
+        })
+        .collect::<String>()
+        .trim()
+        .trim_matches('.')
+        .to_string();
+
+    if sanitized.is_empty() {
+        "chart.png".to_string()
+    } else if sanitized.to_lowercase().ends_with(".png") {
+        sanitized
+    } else {
+        format!("{sanitized}.png")
+    }
+}
+
+fn unique_export_path(export_dir: PathBuf, file_name: &str) -> PathBuf {
+    let first_path = export_dir.join(file_name);
+    if !first_path.exists() {
+        return first_path;
+    }
+
+    let stem = file_name.strip_suffix(".png").unwrap_or(file_name);
+    for index in 1.. {
+        let candidate = export_dir.join(format!("{stem}-{index}.png"));
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+
+    unreachable!("unbounded filename suffix search should always return");
 }

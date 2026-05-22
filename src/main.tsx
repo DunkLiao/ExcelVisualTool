@@ -9,6 +9,9 @@ const PREVIEW_ROW_LIMIT = 200;
 const SETTINGS_STORAGE_KEY = "excel-visual-tool.chart-settings.v1";
 const RECENT_FILE_STORAGE_KEY = "excel-visual-tool.recent-file.v1";
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
+const SUPPORTED_FILE_EXTENSIONS = [".xlsx", ".xls", ".csv"];
+const SUPPORTED_FILE_LABEL = ".xlsx, .xls, or .csv";
+const CSV_DECODER_CANDIDATES = ["utf-8", "big5", "utf-16le", "utf-16be"];
 
 type CellValue = string | number | boolean | Date | null;
 
@@ -47,6 +50,7 @@ type ChartValidation = {
 };
 
 type ChartOption = Record<string, unknown>;
+type SaveChartPngResult = string;
 type TimeAxisGranularity = "year" | "month" | "day";
 type TooltipParam = {
   axisValue?: string | number;
@@ -371,7 +375,7 @@ function buildChartValidation(
   if (!sheet) {
     return {
       valid: false,
-      message: "Open an .xlsx workbook to build a chart.",
+      message: "Open a supported spreadsheet file to build a chart.",
       warnings: []
     };
   }
@@ -705,10 +709,70 @@ function parseWorksheet(name: string, worksheet: XLSX.WorkSheet): ParsedSheet {
   };
 }
 
-function parseWorkbook(fileName: string, buffer: ArrayBuffer): WorkbookState {
-  const workbook = XLSX.read(buffer, {
+function isCsvFile(fileName: string) {
+  return fileName.toLowerCase().endsWith(".csv");
+}
+
+function countMatches(value: string, pattern: RegExp) {
+  return value.match(pattern)?.length ?? 0;
+}
+
+function scoreDecodedCsv(value: string) {
+  const replacementCount = countMatches(value, /\uFFFD/g);
+  const controlCount = countMatches(value, /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g);
+  const traditionalChineseCount = countMatches(value, /[\u4E00-\u9FFF]/g);
+  const separatorCount = countMatches(value, /[,;\t]/g);
+  const lineBreakCount = countMatches(value, /\r\n|\n|\r/g);
+
+  return (
+    traditionalChineseCount * 3 +
+    separatorCount +
+    lineBreakCount -
+    replacementCount * 20 -
+    controlCount * 10
+  );
+}
+
+function decodeCsvBuffer(buffer: ArrayBuffer) {
+  const bytes = new Uint8Array(buffer);
+
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+    return new TextDecoder("utf-8").decode(bytes.subarray(3));
+  }
+
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
+    return new TextDecoder("utf-16le").decode(bytes.subarray(2));
+  }
+
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+    return new TextDecoder("utf-16be").decode(bytes.subarray(2));
+  }
+
+  const decodedCandidates = CSV_DECODER_CANDIDATES.map((encoding) => {
+    try {
+      const decodedValue = new TextDecoder(encoding).decode(bytes);
+      return {
+        encoding,
+        value: decodedValue,
+        score: scoreDecodedCsv(decodedValue)
+      };
+    } catch {
+      return null;
+    }
+  }).filter((candidate): candidate is { encoding: string; value: string; score: number } =>
+    Boolean(candidate)
+  );
+
+  return (
+    decodedCandidates.sort((left, right) => right.score - left.score)[0]?.value ??
+    new TextDecoder("utf-8").decode(bytes)
+  );
+}
+
+function parseWorkbook(fileName: string, content: ArrayBuffer | string): WorkbookState {
+  const workbook = XLSX.read(content, {
     cellDates: true,
-    type: "array"
+    type: typeof content === "string" ? "string" : "array"
   });
 
   const sheets = workbook.SheetNames.map((sheetName) =>
@@ -726,11 +790,23 @@ function parseWorkbook(fileName: string, buffer: ArrayBuffer): WorkbookState {
   };
 }
 
+function isSupportedSpreadsheetFile(fileName: string) {
+  const normalizedFileName = fileName.toLowerCase();
+  return SUPPORTED_FILE_EXTENSIONS.some((extension) => normalizedFileName.endsWith(extension));
+}
+
+function stripSupportedSpreadsheetExtension(fileName: string) {
+  return fileName.replace(/\.(xlsx|xls|csv)$/i, "");
+}
+
 function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chartRef = useRef<ReactECharts>(null);
   const [workbookState, setWorkbookState] = useState<WorkbookState | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
+  const [exportMessage, setExportMessage] = useState("");
+  const [exportErrorMessage, setExportErrorMessage] = useState("");
+  const [isExporting, setIsExporting] = useState(false);
   const [chartSettings, setChartSettings] = useState<ChartSettings>(loadChartSettings);
   const [recentFileName, setRecentFileName] = useState(
     () => window.localStorage.getItem(RECENT_FILE_STORAGE_KEY) ?? ""
@@ -782,26 +858,45 @@ function App() {
     }));
   }
 
-  function handleExportPng() {
+  async function handleExportPng() {
     if (!chartValidation.valid) {
       return;
     }
 
     const chartInstance = chartRef.current?.getEchartsInstance();
     if (!chartInstance) {
+      setExportErrorMessage("Chart is not ready yet.");
       return;
     }
 
-    const imageUrl = chartInstance.getDataURL({
-      type: "png",
-      pixelRatio: 2,
-      backgroundColor: "#ffffff"
-    });
-    const downloadLink = document.createElement("a");
-    const fileBaseName = workbookState?.fileName.replace(/\.xlsx$/i, "") || "chart";
-    downloadLink.href = imageUrl;
-    downloadLink.download = `${fileBaseName}-${chartSettings.chartType}.png`;
-    downloadLink.click();
+    setIsExporting(true);
+    setExportMessage("");
+    setExportErrorMessage("");
+
+    try {
+      const imageUrl = chartInstance.getDataURL({
+        type: "png",
+        pixelRatio: 2,
+        backgroundColor: "#ffffff"
+      });
+      const imageResponse = await fetch(imageUrl);
+      const imageBuffer = await imageResponse.arrayBuffer();
+      const imageBytes = Array.from(new Uint8Array(imageBuffer));
+      const fileBaseName = workbookState
+        ? stripSupportedSpreadsheetExtension(workbookState.fileName)
+        : "chart";
+      const savedPath = await invoke<SaveChartPngResult>("save_chart_png", {
+        fileName: `${fileBaseName}-${chartSettings.chartType}.png`,
+        imageBytes
+      });
+
+      setExportMessage(`Saved to ${savedPath}`);
+    } catch (error) {
+      writeAppLog("error", `Unable to export PNG: ${describeError(error)}`);
+      setExportErrorMessage(error instanceof Error ? error.message : "Unable to export PNG.");
+    } finally {
+      setIsExporting(false);
+    }
   }
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -811,8 +906,8 @@ function App() {
       return;
     }
 
-    if (!file.name.toLowerCase().endsWith(".xlsx")) {
-      setErrorMessage("Only .xlsx files are supported in this version.");
+    if (!isSupportedSpreadsheetFile(file.name)) {
+      setErrorMessage(`Only ${SUPPORTED_FILE_LABEL} files are supported.`);
       setWorkbookState(null);
       resetChartFields();
       event.target.value = "";
@@ -821,9 +916,12 @@ function App() {
 
     try {
       const buffer = await file.arrayBuffer();
-      const parsedWorkbook = parseWorkbook(file.name, buffer);
+      const content = isCsvFile(file.name) ? decodeCsvBuffer(buffer) : buffer;
+      const parsedWorkbook = parseWorkbook(file.name, content);
       setWorkbookState(parsedWorkbook);
       setErrorMessage("");
+      setExportMessage("");
+      setExportErrorMessage("");
       setRecentFileName(file.name);
       window.localStorage.setItem(RECENT_FILE_STORAGE_KEY, file.name);
     } catch (error) {
@@ -859,7 +957,7 @@ function App() {
           ref={fileInputRef}
           className="file-input"
           type="file"
-          accept=".xlsx"
+          accept={SUPPORTED_FILE_EXTENSIONS.join(",")}
           onChange={handleFileChange}
         />
         <button
@@ -867,7 +965,7 @@ function App() {
           className="primary-button"
           onClick={() => fileInputRef.current?.click()}
         >
-          Open .xlsx
+          Open spreadsheet
         </button>
         {errorMessage ? <div className="error-message">{errorMessage}</div> : null}
         {!workbookState && recentFileName ? (
@@ -1050,11 +1148,13 @@ function App() {
         <button
           type="button"
           className="secondary-button"
-          disabled={!chartValidation.valid}
+          disabled={!chartValidation.valid || isExporting}
           onClick={handleExportPng}
         >
-          Export PNG
+          {isExporting ? "Exporting..." : "Export PNG"}
         </button>
+        {exportMessage ? <div className="info-message">{exportMessage}</div> : null}
+        {exportErrorMessage ? <div className="error-message">{exportErrorMessage}</div> : null}
         <section className="metadata-panel">
           <h2>Fields</h2>
           {fieldMetadata.length > 0 ? (
