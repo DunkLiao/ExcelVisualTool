@@ -269,6 +269,13 @@ p,
   grid-column: 1 / -1;
 }
 
+.sql-help {
+  grid-column: 1 / -1;
+  color: #657084;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .table-placeholder {
   flex: 1;
   margin: 18px;

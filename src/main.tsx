@@ -3,7 +3,7 @@ import ReactDOM from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
 import ReactECharts from "echarts-for-react";
 import initSqlJs from "sql.js";
-import type { QueryExecResult, SqlJsStatic, SqlValue } from "sql.js";
+import type { Database, QueryExecResult, SqlJsStatic, SqlValue } from "sql.js";
 import sqlWasmUrl from "sql.js/dist/sql-wasm.wasm?url";
 import * as XLSX from "xlsx";
 import "./styles.css";
@@ -1048,37 +1048,54 @@ function validateSqlQuery(sqlText: string) {
   return normalizedSql;
 }
 
-function executeSqlQuery(sqlApi: SqlJsStatic, sheet: ParsedSheet, sqlText: string): ParsedSheet {
-  const normalizedSql = validateSqlQuery(sqlText);
-
+function createSqlTableFromSheet(
+  db: Database,
+  tableName: string,
+  sheet: ParsedSheet
+) {
   if (sheet.headers.length === 0) {
-    return {
-      name: `${sheet.name} SQL`,
-      headers: [],
-      rows: []
-    };
+    db.run(`CREATE TABLE ${quoteSqlIdentifier(tableName)} ("_empty" TEXT)`);
+    return;
   }
 
+  const quotedTableName = quoteSqlIdentifier(tableName);
+  const quotedHeaders = sheet.headers.map(quoteSqlIdentifier);
+  db.run(`CREATE TABLE ${quotedTableName} (${quotedHeaders.join(", ")})`);
+
+  if (sheet.rows.length === 0) {
+    return;
+  }
+
+  const placeholders = sheet.headers.map(() => "?").join(", ");
+  const insertStatement = db.prepare(
+    `INSERT INTO ${quotedTableName} (${quotedHeaders.join(", ")}) VALUES (${placeholders})`
+  );
+
+  try {
+    sheet.rows.forEach((row) => {
+      insertStatement.run(sheet.headers.map((header) => toSqlValue(row[header] ?? null)));
+    });
+  } finally {
+    insertStatement.free();
+  }
+}
+
+function executeSqlQuery(
+  sqlApi: SqlJsStatic,
+  workbook: WorkbookState,
+  activeSheet: ParsedSheet,
+  sqlText: string
+): ParsedSheet {
+  const normalizedSql = validateSqlQuery(sqlText);
   const db = new sqlApi.Database();
 
   try {
-    const tableName = quoteSqlIdentifier(SQL_TABLE_NAME);
-    const quotedHeaders = sheet.headers.map(quoteSqlIdentifier);
-    db.run(`CREATE TABLE ${tableName} (${quotedHeaders.join(", ")})`);
+    workbook.sheets.forEach((sheet) => {
+      createSqlTableFromSheet(db, sheet.name, sheet);
+    });
 
-    if (sheet.rows.length > 0) {
-      const placeholders = sheet.headers.map(() => "?").join(", ");
-      const insertStatement = db.prepare(
-        `INSERT INTO ${tableName} (${quotedHeaders.join(", ")}) VALUES (${placeholders})`
-      );
-
-      try {
-        sheet.rows.forEach((row) => {
-          insertStatement.run(sheet.headers.map((header) => toSqlValue(row[header] ?? null)));
-        });
-      } finally {
-        insertStatement.free();
-      }
+    if (!workbook.sheets.some((sheet) => sheet.name.toLowerCase() === SQL_TABLE_NAME)) {
+      createSqlTableFromSheet(db, SQL_TABLE_NAME, activeSheet);
     }
 
     const results: QueryExecResult[] = db.exec(normalizedSql);
@@ -1087,11 +1104,13 @@ function executeSqlQuery(sqlApi: SqlJsStatic, sheet: ParsedSheet, sqlText: strin
       throw new Error("SQL 查詢必須回傳結果集。");
     }
 
+    const resultHeaders = normalizeHeaders(result.columns, result.columns.length);
+
     return {
-      name: `${sheet.name} SQL`,
-      headers: result.columns,
+      name: "SQL 查詢結果",
+      headers: resultHeaders,
       rows: result.values.map((values) =>
-        result.columns.reduce<Record<string, CellValue>>((row, column, index) => {
+        resultHeaders.reduce<Record<string, CellValue>>((row, column, index) => {
           row[column] = fromSqlValue(values[index] ?? null);
           return row;
         }, {})
@@ -1195,13 +1214,19 @@ function App() {
     }));
   }
 
+  function handleSqlTextChange(nextSqlText: string) {
+    setSqlText(nextSqlText);
+    setSqlErrorMessage("");
+    setQuerySheet(activeSheet);
+  }
+
   function handleSqlExecute() {
-    if (!activeSheet || !sqlApi) {
+    if (!workbookState || !activeSheet || !sqlApi) {
       return;
     }
 
     try {
-      const nextQuerySheet = executeSqlQuery(sqlApi, activeSheet, sqlText);
+      const nextQuerySheet = executeSqlQuery(sqlApi, workbookState, activeSheet, sqlText);
       setQuerySheet(nextQuerySheet);
       setSqlErrorMessage("");
       resetChartFields();
@@ -1363,10 +1388,10 @@ function App() {
       <section className="workspace">
         <div className="sql-area">
           <div className="section-header">
-            <h2>SQL 篩選</h2>
+            <h2>SQL 查詢</h2>
             <span>
               {displaySheet
-                ? `查詢結果 ${displaySheet.rows.length} / 原始 ${activeSheet?.rows.length ?? 0} 筆`
+                ? `查詢結果 ${displaySheet.rows.length} 筆`
                 : "等待資料"}
             </span>
           </div>
@@ -1375,13 +1400,13 @@ function App() {
               value={sqlText}
               disabled={!activeSheet}
               spellCheck={false}
-              onChange={(event) => setSqlText(event.target.value)}
+              onChange={(event) => handleSqlTextChange(event.target.value)}
             />
             <div className="sql-actions">
               <button
                 type="button"
                 className="primary-button"
-                disabled={!activeSheet || !sqlApi}
+                disabled={!workbookState || !activeSheet || !sqlApi}
                 onClick={handleSqlExecute}
               >
                 執行 SQL
@@ -1395,6 +1420,12 @@ function App() {
                 重設
               </button>
             </div>
+            {workbookState ? (
+              <div className="sql-help">
+                可用工作表名稱做 JOIN；中文、空白或特殊字元請加雙引號，例如{" "}
+                {quoteSqlIdentifier(workbookState.sheets[0]?.name ?? "工作表1")}。data 代表目前工作表。
+              </div>
+            ) : null}
             {sqlErrorMessage ? <div className="error-message">{sqlErrorMessage}</div> : null}
           </div>
         </div>
