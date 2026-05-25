@@ -1,6 +1,6 @@
 # Excel 視覺化工具
 
-Excel 視覺化工具是一個 Windows 桌面小工具，可在本機開啟 `.xlsx`、`.xls` 與 `.csv` 試算表，預覽資料、選擇欄位、產生圖表，並將目前圖表匯出成 PNG 圖片。
+Excel 視覺化工具是一個 Windows 桌面小工具，可在本機開啟 `.xlsx`、`.xls` 與 `.csv` 試算表，預覽資料、選擇欄位、產生圖表，並將目前查詢結果匯出成 Excel 檔或將目前圖表匯出成 PNG 圖片。
 
 這個專案使用 Tauri、React、TypeScript、Vite、ECharts 與 SheetJS 製作。試算表檔案會在本機解析，不會上傳到雲端，也不會寫回原始檔。
 
@@ -9,9 +9,10 @@ Excel 視覺化工具是一個 Windows 桌面小工具，可在本機開啟 `.xl
 - 開啟本機 `.xlsx`、`.xls` 與 `.csv` 檔案。
 - 自動嘗試 UTF-8、Big5、UTF-16LE 與 UTF-16BE 等常見 CSV 編碼。
 - 切換活頁簿中的不同工作表。
-- 預覽資料表內容，最多先顯示前 200 筆資料列。
+- 預覽資料表內容，最多先顯示前 5 筆資料列。
 - 使用 SQLite SQL 語法查詢目前工作表，或跨同一個 Excel 活頁簿內的多個工作表做 `JOIN`，再用查詢結果產生預覽與圖表。
 - 複製目前 SQL 查詢結果的完整資料，包含欄位名稱，並可直接貼回 Excel。
+- 將目前 SQL 查詢結果的完整資料匯出為 `.xlsx`，儲存在執行檔旁的 `exports` 資料夾。
 - 自動判斷欄位型別：文字、數字、日期、混合、空白。
 - 選擇 X 軸、Y 軸與分類欄位。
 - 支援長條圖、折線圖、圓餅圖、散佈圖、堆疊長條圖、時間序列圖、面積圖、水平長條圖、雷達圖、矩形式樹狀圖、漏斗圖與儀表圖。
@@ -40,12 +41,13 @@ portableapps\excel-visual-tool.exe
 3. 如果活頁簿有多個工作表，從左側選擇要視覺化的工作表。
 4. 如需篩選或跨工作表合併資料，在中間上方輸入 SQL 後點選 `執行 SQL`。
 5. 如需把查詢結果貼到 Excel 或其他工具，點選資料預覽上方的 `複製資料`。
-6. 在右側選擇圖表類型。
-7. 選擇 X 軸欄位與 Y 軸欄位。
-8. 視圖表需要選擇分類欄位。
-9. 圖表會自動顯示在中間下方。
-10. 點選 `匯出 PNG`。
-11. 匯出成功後，右側會顯示 PNG 檔案儲存路徑。
+6. 如需把完整查詢結果存成 Excel 檔，點選資料預覽上方的 `匯出 Excel`。
+7. 在右側選擇圖表類型。
+8. 選擇 X 軸欄位與 Y 軸欄位。
+9. 視圖表需要選擇分類欄位。
+10. 圖表會自動顯示在中間下方。
+11. 點選 `匯出 PNG`。
+12. 匯出成功後，畫面會顯示檔案儲存路徑。
 
 ## SQL 查詢與跨工作表 JOIN
 
@@ -57,7 +59,7 @@ SELECT * FROM data
 
 可用 SQLite 的 `SELECT` 語法篩選、排序、限制資料筆數，或對同一個 `.xlsx` / `.xls` 活頁簿內的多個工作表做 `JOIN`。查詢結果會成為資料預覽、欄位清單與圖表的來源。
 
-資料預覽最多只顯示前 200 筆資料列，但 `複製資料` 會複製目前查詢結果的全部資料列，並在第一列包含欄位名稱。複製格式為 Tab 分隔文字，可直接貼到 Excel 並保留欄位分欄。
+資料預覽最多只顯示前 5 筆資料列，但 `複製資料` 與 `匯出 Excel` 會使用目前查詢結果的全部資料列。`複製資料` 會在第一列包含欄位名稱，格式為 Tab 分隔文字，可直接貼到 Excel 並保留欄位分欄。`匯出 Excel` 會產生 `.xlsx` 檔案並保留欄位順序。
 
 例如用 `LIKE` 篩選文字：
 
@@ -128,21 +130,27 @@ JOIN "Q2" q2 ON q1."Product" = q2."Product"
 
 如果欄位不符合圖表需求，右側會顯示繁體中文提示，例如「Y 軸欄位必須是數值。」或「請選擇分類欄位。」。
 
-## PNG 匯出
+## 查詢結果與 PNG 匯出
 
-PNG 會輸出到執行檔旁的 `exports` 資料夾。例如 portable 版本的輸出位置是：
+`匯出 Excel` 與 `匯出 PNG` 都會輸出到執行檔旁的 `exports` 資料夾。例如 portable 版本的輸出位置是：
 
 ```text
 portableapps\exports\
 ```
 
-檔名會使用原始檔名與繁體中文圖表類型，例如：
+Excel 匯出會使用目前查詢結果的完整資料列，不受資料預覽 5 筆限制影響。檔名會使用原始檔名與目前資料來源名稱，例如：
+
+```text
+portableapps\exports\sales-sample-SQL 查詢結果.xlsx
+```
+
+PNG 檔名會使用原始檔名與繁體中文圖表類型，例如：
 
 ```text
 portableapps\exports\sales-sample-圓餅圖.png
 ```
 
-如果同名檔案已存在，程式會自動加上流水號，例如 `sales-sample-圓餅圖-1.png`，不會覆蓋既有圖片。
+如果同名檔案已存在，程式會自動加上流水號，例如 `sales-sample-SQL 查詢結果-1.xlsx` 或 `sales-sample-圓餅圖-1.png`，不會覆蓋既有檔案。
 
 ## CSV 編碼支援
 
@@ -177,9 +185,10 @@ test-data\mixed-missing-sample.xlsx
 test-data\multi-sheet-sample.xlsx
 test-data\csv-sales-sample.csv
 test-data\big5-sales-sample.csv
+test-data\uat-500-rows.xlsx
 ```
 
-第一次使用可先開啟 `test-data\chinese-sales-sample.xlsx`，確認中文欄位、中文分類與圖表匯出是否正常。測試 CSV 編碼時可使用 `test-data\csv-sales-sample.csv` 與 `test-data\big5-sales-sample.csv`。
+第一次使用可先開啟 `test-data\chinese-sales-sample.xlsx`，確認中文欄位、中文分類與圖表匯出是否正常。測試 CSV 編碼時可使用 `test-data\csv-sales-sample.csv` 與 `test-data\big5-sales-sample.csv`。測試資料預覽限制與完整 Excel 匯出時，可使用 `test-data\uat-500-rows.xlsx`，確認畫面只預覽前 5 筆，但 `匯出 Excel` 會輸出全部 500 筆資料。
 
 ## 系統需求
 

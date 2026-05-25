@@ -8,7 +8,7 @@ import sqlWasmUrl from "sql.js/dist/sql-wasm.wasm?url";
 import * as XLSX from "xlsx";
 import "./styles.css";
 
-const PREVIEW_ROW_LIMIT = 200;
+const PREVIEW_ROW_LIMIT = 5;
 const SETTINGS_STORAGE_KEY = "excel-visual-tool.chart-settings.v1";
 const RECENT_FILE_STORAGE_KEY = "excel-visual-tool.recent-file.v1";
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -68,6 +68,7 @@ type ChartValidation = {
 
 type ChartOption = Record<string, unknown>;
 type SaveChartPngResult = string;
+type SaveQueryXlsxResult = string;
 type TimeAxisGranularity = "year" | "month" | "day";
 type TooltipParam = {
   axisValue?: string | number;
@@ -158,6 +159,27 @@ function buildSheetTsv(sheet: ParsedSheet) {
   );
 
   return [headerRow, ...dataRows].join("\n");
+}
+
+function sanitizeWorksheetName(name: string) {
+  const sanitizedName = name.replace(/[:\\/?*[\]]/g, " ").trim();
+  return (sanitizedName || "查詢結果").slice(0, 31);
+}
+
+function buildSheetWorkbookBytes(sheet: ParsedSheet) {
+  const rows = [
+    sheet.headers,
+    ...sheet.rows.map((row) => sheet.headers.map((header) => row[header] ?? null))
+  ];
+  const worksheet = XLSX.utils.aoa_to_sheet(rows);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, sanitizeWorksheetName(sheet.name));
+  const workbookBuffer = XLSX.write(workbook, {
+    bookType: "xlsx",
+    type: "array"
+  }) as ArrayBuffer;
+
+  return Array.from(new Uint8Array(workbookBuffer));
 }
 
 function isEmptyCell(value: CellValue) {
@@ -1148,6 +1170,9 @@ function App() {
   const [copyMessage, setCopyMessage] = useState("");
   const [copyErrorMessage, setCopyErrorMessage] = useState("");
   const [isExporting, setIsExporting] = useState(false);
+  const [queryExportMessage, setQueryExportMessage] = useState("");
+  const [queryExportErrorMessage, setQueryExportErrorMessage] = useState("");
+  const [isExportingQuery, setIsExportingQuery] = useState(false);
   const [chartSettings, setChartSettings] = useState<ChartSettings>(loadChartSettings);
   const [recentFileName, setRecentFileName] = useState(
     () => window.localStorage.getItem(RECENT_FILE_STORAGE_KEY) ?? ""
@@ -1235,11 +1260,17 @@ function App() {
     setCopyErrorMessage("");
   }
 
+  function clearQueryExportMessages() {
+    setQueryExportMessage("");
+    setQueryExportErrorMessage("");
+  }
+
   function handleSqlTextChange(nextSqlText: string) {
     setSqlText(nextSqlText);
     setSqlErrorMessage("");
     setQuerySheet(activeSheet);
     clearCopyMessages();
+    clearQueryExportMessages();
   }
 
   function handleSqlExecute() {
@@ -1252,6 +1283,7 @@ function App() {
       setQuerySheet(nextQuerySheet);
       setSqlErrorMessage("");
       clearCopyMessages();
+      clearQueryExportMessages();
       resetChartFields();
     } catch (error) {
       writeAppLog("warn", `SQL query failed: ${describeError(error)}`);
@@ -1264,6 +1296,7 @@ function App() {
     setSqlErrorMessage("");
     setQuerySheet(activeSheet);
     clearCopyMessages();
+    clearQueryExportMessages();
     resetChartFields();
   }
 
@@ -1285,6 +1318,34 @@ function App() {
     } catch (error) {
       writeAppLog("warn", `Unable to copy query result: ${describeError(error)}`);
       setCopyErrorMessage("無法複製資料。請確認剪貼簿權限。");
+    }
+  }
+
+  async function handleExportQueryXlsx() {
+    if (!displaySheet || displaySheet.headers.length === 0) {
+      return;
+    }
+
+    setIsExportingQuery(true);
+    setQueryExportMessage("");
+    setQueryExportErrorMessage("");
+
+    try {
+      const workbookBytes = buildSheetWorkbookBytes(displaySheet);
+      const fileBaseName = workbookState
+        ? stripSupportedSpreadsheetExtension(workbookState.fileName)
+        : "查詢結果";
+      const savedPath = await invoke<SaveQueryXlsxResult>("save_query_xlsx", {
+        fileName: `${fileBaseName}-${displaySheet.name}.xlsx`,
+        workbookBytes
+      });
+
+      setQueryExportMessage(`已匯出 ${displaySheet.rows.length} 筆資料列至 ${savedPath}`);
+    } catch (error) {
+      writeAppLog("error", `Unable to export query XLSX: ${describeError(error)}`);
+      setQueryExportErrorMessage("無法匯出 Excel。");
+    } finally {
+      setIsExportingQuery(false);
     }
   }
 
@@ -1354,6 +1415,7 @@ function App() {
       setSqlErrorMessage("");
       setQuerySheet(parsedWorkbook.sheets[0] ?? null);
       clearCopyMessages();
+      clearQueryExportMessages();
       setExportMessage("");
       setExportErrorMessage("");
       setRecentFileName(file.name);
@@ -1379,6 +1441,7 @@ function App() {
     );
     resetChartFields();
     clearCopyMessages();
+    clearQueryExportMessages();
   }
 
   return (
@@ -1489,6 +1552,14 @@ function App() {
               >
                 複製資料
               </button>
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                disabled={!canCopyDisplaySheet || isExportingQuery}
+                onClick={handleExportQueryXlsx}
+              >
+                {isExportingQuery ? "匯出中..." : "匯出 Excel"}
+              </button>
               <span>
                 {displaySheet
                   ? `顯示 ${Math.min(displaySheet.rows.length, PREVIEW_ROW_LIMIT)} / ${
@@ -1501,6 +1572,12 @@ function App() {
           {copyMessage ? <div className="info-message preview-message">{copyMessage}</div> : null}
           {copyErrorMessage ? (
             <div className="error-message preview-message">{copyErrorMessage}</div>
+          ) : null}
+          {queryExportMessage ? (
+            <div className="info-message preview-message">{queryExportMessage}</div>
+          ) : null}
+          {queryExportErrorMessage ? (
+            <div className="error-message preview-message">{queryExportErrorMessage}</div>
           ) : null}
           {displaySheet && displaySheet.headers.length > 0 ? (
             <div className="table-scroll">
