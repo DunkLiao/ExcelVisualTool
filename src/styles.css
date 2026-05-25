@@ -364,6 +364,121 @@ p,
   background: #fff8e6;
 }
 
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.help-button,
+.dialog-close-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 1px solid #c6ceda;
+  border-radius: 999px;
+  color: #394456;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.help-button {
+  width: 30px;
+  height: 30px;
+  font-weight: 700;
+}
+
+.help-button:hover,
+.dialog-close-button:hover {
+  border-color: #2563eb;
+  color: #1d4ed8;
+  background: #eef4ff;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.chart-help-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(980px, 100%);
+  max-height: min(760px, calc(100vh - 48px));
+  border: 1px solid #d8dee8;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.22);
+}
+
+.chart-help-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border-bottom: 1px solid #e7ebf1;
+}
+
+.dialog-close-button {
+  width: 32px;
+  height: 32px;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.chart-help-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 16px 20px 20px;
+  overflow: auto;
+}
+
+.chart-help-card {
+  padding: 14px;
+  border: 1px solid #e1e7f0;
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.chart-help-card h3 {
+  margin: 0 0 10px;
+  color: #172033;
+  font-size: 15px;
+}
+
+.chart-help-card dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.chart-help-card dl div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.chart-help-card dt {
+  color: #657084;
+  font-weight: 700;
+}
+
+.chart-help-card dd {
+  margin: 0;
+  color: #394456;
+  line-height: 1.45;
+}
+
 .settings label {
   display: flex;
   flex-direction: column;
@@ -424,5 +539,24 @@ p,
 
   .sql-actions button {
     flex: 1;
+  }
+
+  .modal-backdrop {
+    align-items: stretch;
+    padding: 12px;
+  }
+
+  .chart-help-dialog {
+    max-height: calc(100vh - 24px);
+  }
+
+  .chart-help-list {
+    grid-template-columns: 1fr;
+    padding: 12px;
+  }
+
+  .chart-help-card dl div {
+    grid-template-columns: 1fr;
+    gap: 3px;
   }
 }

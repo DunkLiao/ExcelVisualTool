@@ -33,7 +33,15 @@ type ChartType =
   | "radar"
   | "treemap"
   | "funnel"
-  | "gauge";
+  | "gauge"
+  | "boxplot"
+  | "heatmap"
+  | "candlestick"
+  | "sankey"
+  | "sunburst"
+  | "graph"
+  | "themeRiver"
+  | "calendarHeatmap";
 
 type ParsedSheet = {
   name: string;
@@ -58,12 +66,23 @@ type ChartSettings = {
   xField: string;
   yField: string;
   categoryField: string;
+  openField: string;
+  highField: string;
+  lowField: string;
+  closeField: string;
 };
 
 type ChartValidation = {
   valid: boolean;
   message: string;
   warnings: string[];
+};
+
+type ChartHelpContent = {
+  purpose: string;
+  useCase: string;
+  inputs: string;
+  notes: string;
 };
 
 type ChartOption = Record<string, unknown>;
@@ -81,7 +100,11 @@ const DEFAULT_CHART_SETTINGS: ChartSettings = {
   chartType: "bar",
   xField: "",
   yField: "",
-  categoryField: ""
+  categoryField: "",
+  openField: "",
+  highField: "",
+  lowField: "",
+  closeField: ""
 };
 
 function describeError(error: unknown) {
@@ -120,7 +143,140 @@ const chartTypeLabels: Record<ChartType, string> = {
   radar: "雷達圖",
   treemap: "矩形式樹狀圖",
   funnel: "漏斗圖",
-  gauge: "儀表圖"
+  gauge: "儀表圖",
+  boxplot: "箱型圖",
+  heatmap: "熱力圖",
+  candlestick: "K 線圖",
+  sankey: "桑基圖",
+  sunburst: "旭日圖",
+  graph: "關係圖",
+  themeRiver: "主題河流圖",
+  calendarHeatmap: "日曆熱力圖"
+};
+
+const chartTypeOrder = Object.keys(chartTypeLabels) as ChartType[];
+
+const chartHelpContents: Record<ChartType, ChartHelpContent> = {
+  bar: {
+    purpose: "比較不同分類的數值大小。",
+    useCase: "適合比較產品、部門、地區或月份的銷售額與數量。",
+    inputs: "X 軸選分類或日期欄位，數值選數字欄位，分類可選分組系列。",
+    notes: "分類太多時會讓標籤擁擠，建議先用 SQL 篩選或彙總。"
+  },
+  line: {
+    purpose: "觀察數值沿分類或時間順序的變化趨勢。",
+    useCase: "適合銷售趨勢、成本變化、指標追蹤與週期性比較。",
+    inputs: "X 軸選日期或有順序的分類欄位，數值選數字欄位，分類可選多條線。",
+    notes: "X 軸若是文字分類，請先確認排序符合分析需求。"
+  },
+  pie: {
+    purpose: "呈現各分類在總量中的占比。",
+    useCase: "適合產品占比、地區占比、支出結構等組成分析。",
+    inputs: "X 軸選分類名稱，數值選數字欄位。",
+    notes: "分類過多或差異太小時不易判讀，建議保留主要分類。"
+  },
+  scatter: {
+    purpose: "觀察兩個數值欄位之間的關係與離群值。",
+    useCase: "適合價格與銷量、成本與利潤、數量與金額等相關性分析。",
+    inputs: "X 軸與 Y 軸都要選數字欄位，分類可選點的分組。",
+    notes: "資料點過多時可能重疊，可先用 SQL 篩選範圍。"
+  },
+  stackedBar: {
+    purpose: "比較總量，同時看出每個分組的組成。",
+    useCase: "適合各月份依產品或地區堆疊的銷售額比較。",
+    inputs: "X 軸選主要分類，數值選數字欄位，分類必須選堆疊分組。",
+    notes: "堆疊層數過多會降低可讀性，建議控制分類數。"
+  },
+  timeSeries: {
+    purpose: "以時間軸呈現數值變化。",
+    useCase: "適合日、月、年的交易量、營收、庫存或 KPI 追蹤。",
+    inputs: "X 軸選日期欄位，數值選數字欄位，分類可選多條時間序列。",
+    notes: "X 軸必須能被辨識為日期或時間。"
+  },
+  area: {
+    purpose: "強調趨勢變化與累積量感。",
+    useCase: "適合流量、營收、產量等隨時間或排序分類累積呈現的指標。",
+    inputs: "X 軸選分類或日期欄位，數值選數字欄位，分類可選多個面積系列。",
+    notes: "多系列重疊時可能遮蔽細節，必要時改用折線圖。"
+  },
+  horizontalBar: {
+    purpose: "橫向比較分類數值，提升長文字標籤可讀性。",
+    useCase: "適合產品名稱、客戶名稱或部門名稱較長的排名比較。",
+    inputs: "X 軸選分類欄位，數值選數字欄位，分類可選分組系列。",
+    notes: "若要呈現排名，建議先用 SQL 排序或限制筆數。"
+  },
+  radar: {
+    purpose: "比較多個指標構成的輪廓差異。",
+    useCase: "適合產品能力、部門績效、客戶評分等多面向比較。",
+    inputs: "X 軸選指標名稱，數值選數字欄位，分類可選不同對象。",
+    notes: "指標尺度差異太大時會影響判讀，建議先標準化資料。"
+  },
+  treemap: {
+    purpose: "用面積大小呈現分類數值的占比與層級感。",
+    useCase: "適合分類多、需要看出大項與小項差距的銷售或成本資料。",
+    inputs: "X 軸選分類名稱，數值選數字欄位。",
+    notes: "目前使用單層分類；需要多層結構時可用旭日圖。"
+  },
+  funnel: {
+    purpose: "呈現流程階段之間的數量遞減或轉換。",
+    useCase: "適合銷售漏斗、案件流程、報名到成交等階段分析。",
+    inputs: "X 軸選階段名稱，數值選數字欄位。",
+    notes: "資料最好代表有順序的流程階段，否則漏斗語意會不清楚。"
+  },
+  gauge: {
+    purpose: "呈現單一核心指標目前值。",
+    useCase: "適合達成率、總銷售額、使用率或單一 KPI 展示。",
+    inputs: "數值選數字欄位，程式會彙總目前資料作為指標值。",
+    notes: "儀表圖不適合比較多分類，若要比較請改用長條圖。"
+  },
+  boxplot: {
+    purpose: "呈現分類中數值分布、四分位距與離散程度。",
+    useCase: "適合比較不同產品、地區或部門的價格、工時、金額分布。",
+    inputs: "X 軸選分類欄位，數值選數字欄位。",
+    notes: "每個分類需要多筆數值才有分析意義，單筆資料只會形成很窄的分布。"
+  },
+  heatmap: {
+    purpose: "用顏色深淺呈現兩個分類交叉後的數值強度。",
+    useCase: "適合產品與地區、部門與月份、狀態與類型的交叉分析。",
+    inputs: "X 軸選第一個分類，Y 分類選第二個分類，數值選數字欄位。",
+    notes: "分類過多會造成格子太密，建議先篩選主要項目。"
+  },
+  candlestick: {
+    purpose: "呈現開盤、最高、最低、收盤的價格區間。",
+    useCase: "適合股票、匯率、商品價格或其他 OHLC 形式資料。",
+    inputs: "日期或分類作為 X 軸，並選擇開盤、最高、最低、收盤四個數字欄位。",
+    notes: "四個價格欄位都必須是數值，資料排序會依日期或 X 軸文字排序。"
+  },
+  sankey: {
+    purpose: "呈現來源到目標之間的流量或轉移關係。",
+    useCase: "適合資金流、客戶旅程、流程轉換、來源去向分析。",
+    inputs: "來源選起點欄位，目標選終點欄位，權重選數字欄位。",
+    notes: "同一來源與目標會自動加總；節點太多時圖面會較複雜。"
+  },
+  sunburst: {
+    purpose: "用同心圓呈現父子層級與數值占比。",
+    useCase: "適合部門到產品、地區到客戶、分類到子分類的階層分析。",
+    inputs: "父層選第一層分類，子層選第二層分類，數值選數字欄位。",
+    notes: "目前支援二層階層；更深層資料需先整理成適合的欄位。"
+  },
+  graph: {
+    purpose: "呈現節點之間的連結與關係強弱。",
+    useCase: "適合客戶關係、交易對手、供應鏈、關聯網路分析。",
+    inputs: "來源選起點欄位，目標選終點欄位，權重選數字欄位。",
+    notes: "節點數過多會增加閱讀難度，建議先聚焦重要關係。"
+  },
+  themeRiver: {
+    purpose: "呈現多分類數值隨時間流動的相對變化。",
+    useCase: "適合多產品銷售趨勢、分類流量變化、議題熱度追蹤。",
+    inputs: "日期選時間欄位，分類選系列欄位，數值選數字欄位。",
+    notes: "X 軸必須是日期；分類太多時河流會變得擁擠。"
+  },
+  calendarHeatmap: {
+    purpose: "用日曆格呈現每日數值強度。",
+    useCase: "適合每日銷售、出勤、交易量、事件次數或工作量分析。",
+    inputs: "日期選日期欄位，數值選數字欄位。",
+    notes: "資料會依日期彙總；跨年資料會依資料範圍顯示。"
+  }
 };
 
 const fieldTypeLabels: Record<FieldType, string> = {
@@ -306,13 +462,97 @@ function formatTimeSeriesTooltip(params: TooltipParam | TooltipParam[]) {
 }
 
 function shouldUseItemTooltip(chartType: ChartType) {
-  return ["pie", "treemap", "funnel", "gauge"].includes(chartType);
+  return ["pie", "treemap", "funnel", "gauge", "sankey", "sunburst", "graph"].includes(
+    chartType
+  );
 }
 
 function shouldUseCategorySeries(chartType: ChartType) {
-  return ["bar", "line", "stackedBar", "timeSeries", "area", "horizontalBar", "radar"].includes(
+  return [
+    "bar",
+    "line",
+    "stackedBar",
+    "timeSeries",
+    "area",
+    "horizontalBar",
+    "radar"
+  ].includes(chartType);
+}
+
+function shouldRequireCategoryField(chartType: ChartType) {
+  return ["stackedBar", "heatmap", "sankey", "sunburst", "graph", "themeRiver"].includes(
     chartType
   );
+}
+
+function shouldShowCategoryField(chartType: ChartType) {
+  return [
+    "bar",
+    "line",
+    "scatter",
+    "stackedBar",
+    "timeSeries",
+    "area",
+    "horizontalBar",
+    "radar",
+    "heatmap",
+    "sankey",
+    "sunburst",
+    "graph",
+    "themeRiver"
+  ].includes(chartType);
+}
+
+function shouldShowYField(chartType: ChartType) {
+  return chartType !== "candlestick";
+}
+
+function shouldShowCandlestickFields(chartType: ChartType) {
+  return chartType === "candlestick";
+}
+
+function getXFieldLabel(chartType: ChartType) {
+  if (chartType === "sankey" || chartType === "graph") {
+    return "來源";
+  }
+
+  if (chartType === "sunburst") {
+    return "子層";
+  }
+
+  if (chartType === "themeRiver" || chartType === "calendarHeatmap") {
+    return "日期";
+  }
+
+  return chartType === "scatter" ? "X 軸" : "X 軸";
+}
+
+function getYFieldLabel(chartType: ChartType) {
+  if (chartType === "scatter") {
+    return "Y 軸";
+  }
+
+  if (chartType === "sankey" || chartType === "graph") {
+    return "權重";
+  }
+
+  return "數值";
+}
+
+function getCategoryFieldLabel(chartType: ChartType) {
+  if (chartType === "sankey" || chartType === "graph") {
+    return "目標";
+  }
+
+  if (chartType === "sunburst") {
+    return "父層";
+  }
+
+  if (chartType === "heatmap") {
+    return "Y 分類";
+  }
+
+  return "分類";
 }
 
 function inferFieldType(values: CellValue[]): FieldType {
@@ -371,7 +611,11 @@ function loadChartSettings(): ChartSettings {
       chartType,
       xField: parsedSettings.xField ?? "",
       yField: parsedSettings.yField ?? "",
-      categoryField: parsedSettings.categoryField ?? ""
+      categoryField: parsedSettings.categoryField ?? "",
+      openField: parsedSettings.openField ?? "",
+      highField: parsedSettings.highField ?? "",
+      lowField: parsedSettings.lowField ?? "",
+      closeField: parsedSettings.closeField ?? ""
     };
   } catch {
     return DEFAULT_CHART_SETTINGS;
@@ -465,14 +709,18 @@ function buildChartValidation(
   }
 
   const warnings: string[] = [];
-  const yLabel = settings.chartType === "scatter" ? "Y 軸" : "數值";
+  const yLabel = getYFieldLabel(settings.chartType);
   const xError =
-    settings.chartType === "scatter"
+    settings.chartType === "candlestick"
+      ? validateDimensionField(metadata, settings.xField, getXFieldLabel(settings.chartType))
+      : settings.chartType === "scatter"
       ? validateNumericField(metadata, settings.xField, "X 軸")
-      : settings.chartType === "timeSeries"
-        ? validateDateField(metadata, settings.xField, "X 軸")
-      : validateDimensionField(metadata, settings.xField, "X 軸");
-  const yError = validateNumericField(metadata, settings.yField, yLabel);
+      : ["timeSeries", "themeRiver", "calendarHeatmap"].includes(settings.chartType)
+        ? validateDateField(metadata, settings.xField, getXFieldLabel(settings.chartType))
+        : validateDimensionField(metadata, settings.xField, getXFieldLabel(settings.chartType));
+  const yError = shouldShowYField(settings.chartType)
+    ? validateNumericField(metadata, settings.yField, yLabel)
+    : null;
 
   if (xError || yError) {
     return {
@@ -482,8 +730,29 @@ function buildChartValidation(
     };
   }
 
-  if (settings.chartType === "stackedBar") {
-    const categoryError = validateDimensionField(metadata, settings.categoryField, "分類");
+  if (settings.chartType === "candlestick") {
+    const candlestickFieldErrors = [
+      validateNumericField(metadata, settings.openField, "開盤"),
+      validateNumericField(metadata, settings.highField, "最高"),
+      validateNumericField(metadata, settings.lowField, "最低"),
+      validateNumericField(metadata, settings.closeField, "收盤")
+    ];
+    const candlestickError = candlestickFieldErrors.find(Boolean);
+    if (candlestickError) {
+      return {
+        valid: false,
+        message: candlestickError,
+        warnings
+      };
+    }
+  }
+
+  if (shouldRequireCategoryField(settings.chartType)) {
+    const categoryError = validateDimensionField(
+      metadata,
+      settings.categoryField,
+      getCategoryFieldLabel(settings.chartType)
+    );
     if (categoryError) {
       return {
         valid: false,
@@ -506,10 +775,17 @@ function buildChartValidation(
 
   const warningFields = [
     settings.xField,
-    settings.yField,
-    shouldUseCategorySeries(settings.chartType) || settings.chartType === "scatter"
+    shouldShowYField(settings.chartType) ? settings.yField : "",
+    shouldUseCategorySeries(settings.chartType) ||
+    settings.chartType === "scatter" ||
+    shouldRequireCategoryField(settings.chartType)
       ? settings.categoryField
-      : ""
+      : "",
+    ...(
+      settings.chartType === "candlestick"
+        ? [settings.openField, settings.highField, settings.lowField, settings.closeField]
+        : []
+    )
   ];
 
   warningFields
@@ -619,6 +895,214 @@ function aggregateTimeSeriesRows(sheet: ParsedSheet, settings: ChartSettings) {
   return seriesValues;
 }
 
+function quantile(sortedValues: number[], percentile: number) {
+  if (sortedValues.length === 0) {
+    return 0;
+  }
+
+  const position = (sortedValues.length - 1) * percentile;
+  const baseIndex = Math.floor(position);
+  const rest = position - baseIndex;
+  const nextValue = sortedValues[baseIndex + 1];
+
+  return nextValue === undefined
+    ? sortedValues[baseIndex]
+    : sortedValues[baseIndex] + rest * (nextValue - sortedValues[baseIndex]);
+}
+
+function buildBoxplotData(sheet: ParsedSheet, settings: ChartSettings) {
+  const groups = new Map<string, number[]>();
+
+  sheet.rows.forEach((row) => {
+    const rawXValue = row[settings.xField] ?? null;
+    const yValue = coerceNumber(row[settings.yField] ?? null);
+    if (isEmptyCell(rawXValue) || yValue === null) {
+      return;
+    }
+
+    const xValue = formatDimensionValue(rawXValue);
+    groups.set(xValue, [...(groups.get(xValue) ?? []), yValue]);
+  });
+
+  const xValues = Array.from(groups.keys());
+  const data = xValues.map((xValue) => {
+    const values = [...(groups.get(xValue) ?? [])].sort((left, right) => left - right);
+    return [
+      values[0] ?? 0,
+      quantile(values, 0.25),
+      quantile(values, 0.5),
+      quantile(values, 0.75),
+      values[values.length - 1] ?? 0
+    ];
+  });
+
+  return { xValues, data };
+}
+
+function aggregatePairRows(sheet: ParsedSheet, settings: ChartSettings) {
+  const xValues: string[] = [];
+  const categoryValues: string[] = [];
+  const values = new Map<string, number>();
+
+  sheet.rows.forEach((row) => {
+    const rawXValue = row[settings.xField] ?? null;
+    const rawCategoryValue = row[settings.categoryField] ?? null;
+    const yValue = coerceNumber(row[settings.yField] ?? null);
+    if (isEmptyCell(rawXValue) || isEmptyCell(rawCategoryValue) || yValue === null) {
+      return;
+    }
+
+    const xValue = formatDimensionValue(rawXValue);
+    const categoryValue = formatDimensionValue(rawCategoryValue);
+    if (!xValues.includes(xValue)) {
+      xValues.push(xValue);
+    }
+    if (!categoryValues.includes(categoryValue)) {
+      categoryValues.push(categoryValue);
+    }
+
+    const key = `${xValue}\u0000${categoryValue}`;
+    values.set(key, (values.get(key) ?? 0) + yValue);
+  });
+
+  return { xValues, categoryValues, values };
+}
+
+function buildNetworkData(sheet: ParsedSheet, settings: ChartSettings) {
+  const nodes = new Set<string>();
+  const links = new Map<string, { source: string; target: string; value: number }>();
+
+  sheet.rows.forEach((row) => {
+    const rawSource = row[settings.xField] ?? null;
+    const rawTarget = row[settings.categoryField] ?? null;
+    const value = coerceNumber(row[settings.yField] ?? null);
+    if (isEmptyCell(rawSource) || isEmptyCell(rawTarget) || value === null) {
+      return;
+    }
+
+    const source = formatDimensionValue(rawSource);
+    const target = formatDimensionValue(rawTarget);
+    nodes.add(source);
+    nodes.add(target);
+
+    const key = `${source}\u0000${target}`;
+    const currentLink = links.get(key);
+    links.set(key, {
+      source,
+      target,
+      value: (currentLink?.value ?? 0) + value
+    });
+  });
+
+  return {
+    nodes: Array.from(nodes).map((name) => ({ name })),
+    links: Array.from(links.values())
+  };
+}
+
+function buildSunburstData(sheet: ParsedSheet, settings: ChartSettings) {
+  const parentValues = new Map<string, Map<string, number>>();
+
+  sheet.rows.forEach((row) => {
+    const rawParent = row[settings.categoryField] ?? null;
+    const rawChild = row[settings.xField] ?? null;
+    const value = coerceNumber(row[settings.yField] ?? null);
+    if (isEmptyCell(rawParent) || isEmptyCell(rawChild) || value === null) {
+      return;
+    }
+
+    const parent = formatDimensionValue(rawParent);
+    const child = formatDimensionValue(rawChild);
+    if (!parentValues.has(parent)) {
+      parentValues.set(parent, new Map<string, number>());
+    }
+
+    const children = parentValues.get(parent);
+    children?.set(child, (children.get(child) ?? 0) + value);
+  });
+
+  return Array.from(parentValues.entries()).map(([parentName, children]) => ({
+    name: parentName,
+    children: Array.from(children.entries()).map(([childName, value]) => ({
+      name: childName,
+      value
+    }))
+  }));
+}
+
+function buildCandlestickData(sheet: ParsedSheet, settings: ChartSettings) {
+  const rows = sheet.rows
+    .map((row) => {
+      const rawXValue = row[settings.xField] ?? null;
+      const open = coerceNumber(row[settings.openField] ?? null);
+      const high = coerceNumber(row[settings.highField] ?? null);
+      const low = coerceNumber(row[settings.lowField] ?? null);
+      const close = coerceNumber(row[settings.closeField] ?? null);
+      const dateTime = coerceDateTime(rawXValue);
+      if (isEmptyCell(rawXValue) || open === null || high === null || low === null || close === null) {
+        return null;
+      }
+
+      return {
+        label: dateTime === null ? formatDimensionValue(rawXValue) : formatDateLabel(dateTime),
+        sortValue: dateTime ?? formatDimensionValue(rawXValue),
+        value: [open, close, low, high]
+      };
+    })
+    .filter((row): row is { label: string; sortValue: string | number; value: number[] } =>
+      Boolean(row)
+    )
+    .sort((left, right) => {
+      if (typeof left.sortValue === "number" && typeof right.sortValue === "number") {
+        return left.sortValue - right.sortValue;
+      }
+
+      return String(left.sortValue).localeCompare(String(right.sortValue));
+    });
+
+  return {
+    xValues: rows.map((row) => row.label),
+    data: rows.map((row) => row.value)
+  };
+}
+
+function buildThemeRiverData(sheet: ParsedSheet, settings: ChartSettings) {
+  return sheet.rows
+    .map((row) => {
+      const dateTime = coerceDateTime(row[settings.xField] ?? null);
+      const value = coerceNumber(row[settings.yField] ?? null);
+      const rawCategory = row[settings.categoryField] ?? null;
+      if (dateTime === null || value === null || isEmptyCell(rawCategory)) {
+        return null;
+      }
+
+      return [formatDateLabel(dateTime), value, formatDimensionValue(rawCategory)];
+    })
+    .filter((row): row is [string, number, string] => Boolean(row));
+}
+
+function buildCalendarHeatmapData(sheet: ParsedSheet, settings: ChartSettings) {
+  const values = new Map<string, number>();
+
+  sheet.rows.forEach((row) => {
+    const dateTime = coerceDateTime(row[settings.xField] ?? null);
+    const value = coerceNumber(row[settings.yField] ?? null);
+    if (dateTime === null || value === null) {
+      return;
+    }
+
+    const dateLabel = formatDateLabel(dateTime);
+    values.set(dateLabel, (values.get(dateLabel) ?? 0) + value);
+  });
+
+  const data = Array.from(values.entries()).sort(([leftDate], [rightDate]) =>
+    leftDate.localeCompare(rightDate)
+  );
+  const range = data.length > 0 ? [data[0][0], data[data.length - 1][0]] : undefined;
+
+  return { data, range };
+}
+
 function buildChartOption(
   sheet: ParsedSheet | null,
   settings: ChartSettings,
@@ -640,6 +1124,264 @@ function buildChartOption(
   }
 
   const baseOption = createBaseChartOption(settings);
+
+  if (settings.chartType === "boxplot") {
+    const { xValues, data } = buildBoxplotData(sheet, settings);
+    return {
+      ...baseOption,
+      tooltip: {
+        trigger: "item"
+      },
+      xAxis: {
+        type: "category",
+        data: xValues
+      },
+      yAxis: {
+        type: "value",
+        name: settings.yField
+      },
+      series: [
+        {
+          name: settings.yField,
+          type: "boxplot",
+          data
+        }
+      ]
+    };
+  }
+
+  if (settings.chartType === "heatmap") {
+    const { xValues, categoryValues, values } = aggregatePairRows(sheet, settings);
+    const data = xValues.flatMap((xValue, xIndex) =>
+      categoryValues.map((categoryValue, categoryIndex) => [
+        xIndex,
+        categoryIndex,
+        values.get(`${xValue}\u0000${categoryValue}`) ?? 0
+      ])
+    );
+    const maxValue = Math.max(0, ...data.map((item) => Number(item[2])));
+
+    return {
+      ...baseOption,
+      tooltip: {
+        trigger: "item"
+      },
+      grid: {
+        left: 88,
+        right: 28,
+        top: 56,
+        bottom: 72,
+        containLabel: true
+      },
+      xAxis: {
+        type: "category",
+        data: xValues,
+        splitArea: {
+          show: true
+        }
+      },
+      yAxis: {
+        type: "category",
+        data: categoryValues,
+        splitArea: {
+          show: true
+        }
+      },
+      visualMap: {
+        min: 0,
+        max: maxValue <= 0 ? 100 : maxValue,
+        calculable: true,
+        orient: "horizontal",
+        left: "center",
+        bottom: 12
+      },
+      series: [
+        {
+          name: settings.yField,
+          type: "heatmap",
+          data,
+          label: {
+            show: true
+          }
+        }
+      ]
+    };
+  }
+
+  if (settings.chartType === "candlestick") {
+    const { xValues, data } = buildCandlestickData(sheet, settings);
+    return {
+      ...baseOption,
+      tooltip: {
+        trigger: "axis"
+      },
+      legend: {
+        show: false
+      },
+      xAxis: {
+        type: "category",
+        data: xValues,
+        scale: true
+      },
+      yAxis: {
+        type: "value",
+        scale: true
+      },
+      series: [
+        {
+          name: chartTypeLabels.candlestick,
+          type: "candlestick",
+          data
+        }
+      ]
+    };
+  }
+
+  if (settings.chartType === "sankey") {
+    const { nodes, links } = buildNetworkData(sheet, settings);
+    return {
+      ...baseOption,
+      tooltip: {
+        trigger: "item"
+      },
+      series: [
+        {
+          name: chartTypeLabels.sankey,
+          type: "sankey",
+          emphasis: {
+            focus: "adjacency"
+          },
+          data: nodes,
+          links
+        }
+      ]
+    };
+  }
+
+  if (settings.chartType === "sunburst") {
+    return {
+      ...baseOption,
+      tooltip: {
+        trigger: "item"
+      },
+      series: [
+        {
+          name: chartTypeLabels.sunburst,
+          type: "sunburst",
+          radius: [0, "88%"],
+          sort: undefined,
+          data: buildSunburstData(sheet, settings),
+          label: {
+            rotate: "radial"
+          }
+        }
+      ]
+    };
+  }
+
+  if (settings.chartType === "graph") {
+    const { nodes, links } = buildNetworkData(sheet, settings);
+    return {
+      ...baseOption,
+      tooltip: {
+        trigger: "item"
+      },
+      series: [
+        {
+          name: chartTypeLabels.graph,
+          type: "graph",
+          layout: "force",
+          roam: true,
+          draggable: true,
+          label: {
+            show: true
+          },
+          force: {
+            repulsion: 120,
+            edgeLength: 80
+          },
+          data: nodes,
+          links: links.map((link) => ({
+            ...link,
+            lineStyle: {
+              width: Math.max(1, Math.min(8, Math.sqrt(link.value)))
+            }
+          }))
+        }
+      ]
+    };
+  }
+
+  if (settings.chartType === "themeRiver") {
+    return {
+      ...baseOption,
+      tooltip: {
+        trigger: "axis"
+      },
+      singleAxis: {
+        type: "time",
+        top: 56,
+        bottom: 56,
+        axisLabel: {
+          formatter: (value: number) => formatDateLabel(value, getTimeAxisGranularity([value]))
+        }
+      },
+      series: [
+        {
+          name: chartTypeLabels.themeRiver,
+          type: "themeRiver",
+          emphasis: {
+            itemStyle: {
+              shadowBlur: 12,
+              shadowColor: "rgba(0, 0, 0, 0.25)"
+            }
+          },
+          data: buildThemeRiverData(sheet, settings)
+        }
+      ]
+    };
+  }
+
+  if (settings.chartType === "calendarHeatmap") {
+    const { data, range } = buildCalendarHeatmapData(sheet, settings);
+    const maxValue = Math.max(0, ...data.map(([, value]) => value));
+    return {
+      ...baseOption,
+      tooltip: {
+        trigger: "item"
+      },
+      visualMap: {
+        min: 0,
+        max: maxValue <= 0 ? 100 : maxValue,
+        calculable: true,
+        orient: "horizontal",
+        left: "center",
+        bottom: 8
+      },
+      calendar: {
+        top: 64,
+        left: 48,
+        right: 24,
+        bottom: 76,
+        cellSize: ["auto", 18],
+        range,
+        itemStyle: {
+          borderWidth: 0.5
+        },
+        yearLabel: {
+          show: true
+        }
+      },
+      series: [
+        {
+          name: settings.yField,
+          type: "heatmap",
+          coordinateSystem: "calendar",
+          data
+        }
+      ]
+    };
+  }
 
   if (settings.chartType === "pie") {
     const { xValues, seriesValues } = aggregateRows(sheet, settings);
@@ -1173,6 +1915,7 @@ function App() {
   const [queryExportMessage, setQueryExportMessage] = useState("");
   const [queryExportErrorMessage, setQueryExportErrorMessage] = useState("");
   const [isExportingQuery, setIsExportingQuery] = useState(false);
+  const [isChartHelpOpen, setIsChartHelpOpen] = useState(false);
   const [chartSettings, setChartSettings] = useState<ChartSettings>(loadChartSettings);
   const [recentFileName, setRecentFileName] = useState(
     () => window.localStorage.getItem(RECENT_FILE_STORAGE_KEY) ?? ""
@@ -1201,7 +1944,15 @@ function App() {
       return false;
     }
 
-    return [chartSettings.xField, chartSettings.yField, chartSettings.categoryField]
+    return [
+      chartSettings.xField,
+      chartSettings.yField,
+      chartSettings.categoryField,
+      chartSettings.openField,
+      chartSettings.highField,
+      chartSettings.lowField,
+      chartSettings.closeField
+    ]
       .filter(Boolean)
       .some((fieldName) => !fieldExists(fieldMetadata, fieldName));
   }, [displaySheet, chartSettings, fieldMetadata]);
@@ -1244,7 +1995,11 @@ function App() {
       ...currentSettings,
       xField: "",
       yField: "",
-      categoryField: ""
+      categoryField: "",
+      openField: "",
+      highField: "",
+      lowField: "",
+      closeField: ""
     }));
   }
 
@@ -1445,7 +2200,8 @@ function App() {
   }
 
   return (
-    <main className="app-shell">
+    <>
+      <main className="app-shell">
       <aside className="sidebar">
         <div>
           <h1>Excel 視覺化工具</h1>
@@ -1634,7 +2390,17 @@ function App() {
       </section>
 
       <aside className="settings">
-        <h2>圖表設定</h2>
+        <div className="settings-header">
+          <h2>圖表設定</h2>
+          <button
+            type="button"
+            className="help-button"
+            aria-label="開啟圖形說明"
+            onClick={() => setIsChartHelpOpen(true)}
+          >
+            ?
+          </button>
+        </div>
         <label>
           圖表類型
           <select
@@ -1657,10 +2423,18 @@ function App() {
             <option value="treemap">矩形式樹狀圖</option>
             <option value="funnel">漏斗圖</option>
             <option value="gauge">儀表圖</option>
+            <option value="boxplot">箱型圖</option>
+            <option value="heatmap">熱力圖</option>
+            <option value="candlestick">K 線圖</option>
+            <option value="sankey">桑基圖</option>
+            <option value="sunburst">旭日圖</option>
+            <option value="graph">關係圖</option>
+            <option value="themeRiver">主題河流圖</option>
+            <option value="calendarHeatmap">日曆熱力圖</option>
           </select>
         </label>
         <label>
-          X 軸
+          {getXFieldLabel(chartSettings.chartType)}
           <select
             disabled={fieldMetadata.length === 0}
             value={fieldExists(fieldMetadata, chartSettings.xField) ? chartSettings.xField : ""}
@@ -1674,42 +2448,130 @@ function App() {
             ))}
           </select>
         </label>
-        <label>
-          Y 軸
-          <select
-            disabled={fieldMetadata.length === 0}
-            value={fieldExists(fieldMetadata, chartSettings.yField) ? chartSettings.yField : ""}
-            onChange={(event) => updateChartSettings({ yField: event.target.value })}
-          >
-            <option value="">選擇欄位</option>
-            {fieldMetadata.map((field) => (
-              <option key={field.name} value={field.name}>
-                {field.name} {field.type === "number" ? "" : `(${fieldTypeLabels[field.type]})`}
+        {shouldShowYField(chartSettings.chartType) ? (
+          <label>
+            {getYFieldLabel(chartSettings.chartType)}
+            <select
+              disabled={fieldMetadata.length === 0}
+              value={fieldExists(fieldMetadata, chartSettings.yField) ? chartSettings.yField : ""}
+              onChange={(event) => updateChartSettings({ yField: event.target.value })}
+            >
+              <option value="">選擇欄位</option>
+              {fieldMetadata.map((field) => (
+                <option key={field.name} value={field.name}>
+                  {field.name} {field.type === "number" ? "" : `(${fieldTypeLabels[field.type]})`}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        {shouldShowCategoryField(chartSettings.chartType) ? (
+          <label>
+            {getCategoryFieldLabel(chartSettings.chartType)}
+            <select
+              disabled={fieldMetadata.length === 0}
+              value={
+                fieldExists(fieldMetadata, chartSettings.categoryField)
+                  ? chartSettings.categoryField
+                  : ""
+              }
+              onChange={(event) => updateChartSettings({ categoryField: event.target.value })}
+            >
+              <option value="">
+                {shouldRequireCategoryField(chartSettings.chartType) ? "選擇欄位" : "無"}
               </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          分類
-          <select
-            disabled={fieldMetadata.length === 0}
-            value={
-              fieldExists(fieldMetadata, chartSettings.categoryField)
-                ? chartSettings.categoryField
-                : ""
-            }
-            onChange={(event) => updateChartSettings({ categoryField: event.target.value })}
-          >
-            <option value="">
-              {chartSettings.chartType === "stackedBar" ? "選擇欄位" : "無"}
-            </option>
-            {fieldMetadata.map((field) => (
-              <option key={field.name} value={field.name}>
-                {field.name}
-              </option>
-            ))}
-          </select>
-        </label>
+              {fieldMetadata.map((field) => (
+                <option key={field.name} value={field.name}>
+                  {field.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        {shouldShowCandlestickFields(chartSettings.chartType) ? (
+          <>
+            <label>
+              開盤
+              <select
+                disabled={fieldMetadata.length === 0}
+                value={
+                  fieldExists(fieldMetadata, chartSettings.openField)
+                    ? chartSettings.openField
+                    : ""
+                }
+                onChange={(event) => updateChartSettings({ openField: event.target.value })}
+              >
+                <option value="">選擇欄位</option>
+                {fieldMetadata.map((field) => (
+                  <option key={field.name} value={field.name}>
+                    {field.name}{" "}
+                    {field.type === "number" ? "" : `(${fieldTypeLabels[field.type]})`}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              最高
+              <select
+                disabled={fieldMetadata.length === 0}
+                value={
+                  fieldExists(fieldMetadata, chartSettings.highField)
+                    ? chartSettings.highField
+                    : ""
+                }
+                onChange={(event) => updateChartSettings({ highField: event.target.value })}
+              >
+                <option value="">選擇欄位</option>
+                {fieldMetadata.map((field) => (
+                  <option key={field.name} value={field.name}>
+                    {field.name}{" "}
+                    {field.type === "number" ? "" : `(${fieldTypeLabels[field.type]})`}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              最低
+              <select
+                disabled={fieldMetadata.length === 0}
+                value={
+                  fieldExists(fieldMetadata, chartSettings.lowField)
+                    ? chartSettings.lowField
+                    : ""
+                }
+                onChange={(event) => updateChartSettings({ lowField: event.target.value })}
+              >
+                <option value="">選擇欄位</option>
+                {fieldMetadata.map((field) => (
+                  <option key={field.name} value={field.name}>
+                    {field.name}{" "}
+                    {field.type === "number" ? "" : `(${fieldTypeLabels[field.type]})`}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              收盤
+              <select
+                disabled={fieldMetadata.length === 0}
+                value={
+                  fieldExists(fieldMetadata, chartSettings.closeField)
+                    ? chartSettings.closeField
+                    : ""
+                }
+                onChange={(event) => updateChartSettings({ closeField: event.target.value })}
+              >
+                <option value="">選擇欄位</option>
+                {fieldMetadata.map((field) => (
+                  <option key={field.name} value={field.name}>
+                    {field.name}{" "}
+                    {field.type === "number" ? "" : `(${fieldTypeLabels[field.type]})`}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
+        ) : null}
         {hasRestoredMissingFields ? (
           <div className="info-message">
             已儲存的設定包含目前工作表中不存在的欄位。
@@ -1750,6 +2612,62 @@ function App() {
         </section>
       </aside>
     </main>
+    {isChartHelpOpen ? (
+      <div
+        className="modal-backdrop"
+        role="presentation"
+        onClick={() => setIsChartHelpOpen(false)}
+      >
+        <section
+          className="chart-help-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="chart-help-title"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="chart-help-header">
+            <h2 id="chart-help-title">圖形說明</h2>
+            <button
+              type="button"
+              className="dialog-close-button"
+              aria-label="關閉圖形說明"
+              onClick={() => setIsChartHelpOpen(false)}
+            >
+              ×
+            </button>
+          </div>
+          <div className="chart-help-list">
+            {chartTypeOrder.map((chartType) => {
+              const helpContent = chartHelpContents[chartType];
+              return (
+                <article className="chart-help-card" key={chartType}>
+                  <h3>{chartTypeLabels[chartType]}</h3>
+                  <dl>
+                    <div>
+                      <dt>目的</dt>
+                      <dd>{helpContent.purpose}</dd>
+                    </div>
+                    <div>
+                      <dt>使用情境</dt>
+                      <dd>{helpContent.useCase}</dd>
+                    </div>
+                    <div>
+                      <dt>輸入參數</dt>
+                      <dd>{helpContent.inputs}</dd>
+                    </div>
+                    <div>
+                      <dt>注意事項</dt>
+                      <dd>{helpContent.notes}</dd>
+                    </div>
+                  </dl>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      </div>
+    ) : null}
+  </>
   );
 }
 
