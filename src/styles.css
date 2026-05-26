@@ -371,7 +371,14 @@ p,
   gap: 12px;
 }
 
+.settings-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .help-button,
+.emoji-guide-button,
 .dialog-close-button {
   display: inline-flex;
   align-items: center;
@@ -384,13 +391,20 @@ p,
   cursor: pointer;
 }
 
-.help-button {
+.help-button,
+.emoji-guide-button {
   width: 30px;
   height: 30px;
   font-weight: 700;
 }
 
+.emoji-guide-button {
+  font-size: 18px;
+  line-height: 1;
+}
+
 .help-button:hover,
+.emoji-guide-button:hover,
 .dialog-close-button:hover {
   border-color: #2563eb;
   color: #1d4ed8;
@@ -419,6 +433,17 @@ p,
   box-shadow: 0 24px 80px rgba(15, 23, 42, 0.22);
 }
 
+.chart-guide-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(1080px, 100%);
+  max-height: min(820px, calc(100vh - 48px));
+  border: 1px solid #d8dee8;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.22);
+}
+
 .chart-help-header {
   display: flex;
   align-items: center;
@@ -433,6 +458,19 @@ p,
   height: 32px;
   font-size: 22px;
   line-height: 1;
+}
+
+.chart-guide-image-wrap {
+  padding: 16px;
+  overflow: auto;
+}
+
+.chart-guide-image-wrap img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid #e1e7f0;
+  border-radius: 6px;
 }
 
 .chart-help-list {
@@ -547,6 +585,10 @@ p,
   }
 
   .chart-help-dialog {
+    max-height: calc(100vh - 24px);
+  }
+
+  .chart-guide-dialog {
     max-height: calc(100vh - 24px);
   }
 

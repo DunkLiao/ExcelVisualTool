@@ -22,6 +22,19 @@ type CellValue = string | number | boolean | Date | null;
 
 type FieldType = "text" | "number" | "date" | "mixed" | "empty";
 type ChartType =
+  | "variableWidthColumn"
+  | "column"
+  | "donutArea"
+  | "bubble"
+  | "horizontalHistogram"
+  | "distributionCurve"
+  | "threeDArea"
+  | "percentStackedColumn"
+  | "stackedColumn"
+  | "percentStackedArea"
+  | "stackedArea"
+  | "waterfall"
+  | "subcategoryPercentStackedColumn"
   | "bar"
   | "line"
   | "pie"
@@ -132,10 +145,23 @@ function installFrontendLogging() {
 }
 
 const chartTypeLabels: Record<ChartType, string> = {
+  variableWidthColumn: "可變寬度直條圖",
   bar: "長條圖",
+  column: "直條圖",
+  donutArea: "環狀面積圖",
   line: "折線圖",
-  pie: "圓餅圖",
   scatter: "散佈圖",
+  bubble: "氣泡圖",
+  horizontalHistogram: "長條直方圖",
+  distributionCurve: "曲線直方圖／分布曲線",
+  threeDArea: "3D 面積圖",
+  percentStackedColumn: "100% 堆疊直條圖",
+  stackedColumn: "堆疊直條圖",
+  percentStackedArea: "100% 堆疊面積圖",
+  stackedArea: "堆疊面積圖",
+  pie: "圓餅圖",
+  waterfall: "瀑布圖",
+  subcategoryPercentStackedColumn: "含子分類的100%堆疊直條圖",
   stackedBar: "堆疊長條圖",
   timeSeries: "時間序列圖",
   area: "面積圖",
@@ -154,14 +180,66 @@ const chartTypeLabels: Record<ChartType, string> = {
   calendarHeatmap: "日曆熱力圖"
 };
 
-const chartTypeOrder = Object.keys(chartTypeLabels) as ChartType[];
+const chartTypeOrder: ChartType[] = [
+  "variableWidthColumn",
+  "bar",
+  "column",
+  "donutArea",
+  "line",
+  "scatter",
+  "bubble",
+  "horizontalHistogram",
+  "distributionCurve",
+  "threeDArea",
+  "percentStackedColumn",
+  "stackedColumn",
+  "percentStackedArea",
+  "stackedArea",
+  "pie",
+  "waterfall",
+  "subcategoryPercentStackedColumn",
+  "stackedBar",
+  "timeSeries",
+  "area",
+  "horizontalBar",
+  "radar",
+  "treemap",
+  "funnel",
+  "gauge",
+  "boxplot",
+  "heatmap",
+  "candlestick",
+  "sankey",
+  "sunburst",
+  "graph",
+  "themeRiver",
+  "calendarHeatmap"
+];
 
 const chartHelpContents: Record<ChartType, ChartHelpContent> = {
+  variableWidthColumn: {
+    purpose: "用直條高度與寬度同時呈現分類數值大小。",
+    useCase: "適合比較銷售額、數量或權重差異，並讓較大分類更醒目。",
+    inputs: "X 軸選分類欄位，數值選數字欄位，分類可選分組系列。",
+    notes: "寬度會依數值相對大小調整；資料不適合推導時會退回一般直條寬度。"
+  },
   bar: {
-    purpose: "比較不同分類的數值大小。",
+    purpose: "以橫向長條比較不同分類的數值大小。",
+    useCase: "適合產品名稱、客戶名稱或部門名稱較長的排名比較。",
+    inputs: "X 軸選分類或日期欄位，數值選數字欄位，分類可選分組系列。",
+    notes: "若要呈現排名，建議先用 SQL 排序或限制筆數。"
+  },
+  column: {
+    purpose: "以垂直直條比較不同分類的數值大小。",
     useCase: "適合比較產品、部門、地區或月份的銷售額與數量。",
     inputs: "X 軸選分類或日期欄位，數值選數字欄位，分類可選分組系列。",
     notes: "分類太多時會讓標籤擁擠，建議先用 SQL 篩選或彙總。"
+  },
+  donutArea: {
+    purpose: "用環狀區塊呈現各分類占整體的比例。",
+    useCase: "適合產品占比、地區占比、支出結構等組成分析。",
+    inputs: "X 軸選分類名稱，數值選數字欄位。",
+    notes: "分類過多或差異太小時不易判讀，建議保留主要分類。"
   },
   line: {
     purpose: "觀察數值沿分類或時間順序的變化趨勢。",
@@ -180,6 +258,66 @@ const chartHelpContents: Record<ChartType, ChartHelpContent> = {
     useCase: "適合價格與銷量、成本與利潤、數量與金額等相關性分析。",
     inputs: "X 軸與 Y 軸都要選數字欄位，分類可選點的分組。",
     notes: "資料點過多時可能重疊，可先用 SQL 篩選範圍。"
+  },
+  bubble: {
+    purpose: "觀察兩個數值欄位的關係，並用氣泡大小呈現數值強度。",
+    useCase: "適合價格、銷量、金額或數量之間的相關性與離群值分析。",
+    inputs: "X 軸與 Y 軸都要選數字欄位，分類可選點的分組。",
+    notes: "氣泡大小由 Y 軸數值推導；資料點過多時可先用 SQL 篩選。"
+  },
+  horizontalHistogram: {
+    purpose: "將數值分箱後，以橫向長條呈現各區間的筆數。",
+    useCase: "適合分析金額、價格、工時、分數等數值分布。",
+    inputs: "數值欄位選要分布統計的數字欄位。",
+    notes: "每個區間顯示資料筆數，不需要另外選擇數值欄位。"
+  },
+  distributionCurve: {
+    purpose: "將數值分箱後，以平滑曲線呈現分布形狀。",
+    useCase: "適合快速觀察數值是否集中、偏態或有多個高峰。",
+    inputs: "數值欄位選要分布統計的數字欄位。",
+    notes: "曲線是由分箱頻率連線而成，並非統計模型估計曲線。"
+  },
+  threeDArea: {
+    purpose: "用帶有深度感的面積圖強調趨勢與量感。",
+    useCase: "適合展示營收、流量、產量等隨分類或時間變化的指標。",
+    inputs: "X 軸選分類或日期欄位，數值選數字欄位，分類可選多個系列。",
+    notes: "此圖使用 2.5D 視覺樣式，不需要額外 3D 套件。"
+  },
+  percentStackedColumn: {
+    purpose: "比較各分類中的組成比例，且每個直條正規化為 100%。",
+    useCase: "適合各月份、地區或部門內部產品占比比較。",
+    inputs: "X 軸選主要分類，數值選數字欄位，子分類必須選堆疊系列。",
+    notes: "此圖強調比例，不適合判讀各分類的總量差異。"
+  },
+  stackedColumn: {
+    purpose: "用垂直堆疊直條同時比較總量與組成。",
+    useCase: "適合各月份依產品或地區堆疊的銷售額比較。",
+    inputs: "X 軸選主要分類，數值選數字欄位，子分類必須選堆疊系列。",
+    notes: "堆疊層數過多會降低可讀性，建議控制分類數。"
+  },
+  percentStackedArea: {
+    purpose: "呈現多個分類隨 X 軸變化的相對占比趨勢。",
+    useCase: "適合觀察產品、渠道或地區占比隨時間改變。",
+    inputs: "X 軸選分類或日期欄位，數值選數字欄位，子分類必須選系列。",
+    notes: "每個 X 軸位置都會正規化為 100%，不呈現總量大小。"
+  },
+  stackedArea: {
+    purpose: "呈現多個系列隨 X 軸變化的累積量與組成。",
+    useCase: "適合多產品營收、部門成本或分類流量的累積趨勢。",
+    inputs: "X 軸選分類或日期欄位，數值選數字欄位，子分類必須選系列。",
+    notes: "多系列重疊時建議控制分類數，避免閱讀困難。"
+  },
+  waterfall: {
+    purpose: "呈現各分類變動值對累積結果的正負貢獻。",
+    useCase: "適合收入到利潤、預算增減、庫存變動等橋接分析。",
+    inputs: "X 軸選階段或分類，變動值選數字欄位。",
+    notes: "數值會依目前資料順序累積，建議先用 SQL 排序。"
+  },
+  subcategoryPercentStackedColumn: {
+    purpose: "以子分類建立 100% 堆疊直條，呈現各主分類內部占比。",
+    useCase: "適合比較各地區、月份或部門中的子分類結構。",
+    inputs: "X 軸選主分類，數值選數字欄位，子分類必須選系列欄位。",
+    notes: "此圖與 100% 堆疊直條相同以比例為主，但強調子分類欄位的語意。"
   },
   stackedBar: {
     purpose: "比較總量，同時看出每個分組的組成。",
@@ -462,37 +600,64 @@ function formatTimeSeriesTooltip(params: TooltipParam | TooltipParam[]) {
 }
 
 function shouldUseItemTooltip(chartType: ChartType) {
-  return ["pie", "treemap", "funnel", "gauge", "sankey", "sunburst", "graph"].includes(
+  return ["pie", "donutArea", "treemap", "funnel", "gauge", "sankey", "sunburst", "graph"].includes(
     chartType
   );
 }
 
 function shouldUseCategorySeries(chartType: ChartType) {
   return [
+    "variableWidthColumn",
     "bar",
+    "column",
     "line",
     "stackedBar",
+    "stackedColumn",
+    "percentStackedColumn",
+    "stackedArea",
+    "percentStackedArea",
+    "subcategoryPercentStackedColumn",
     "timeSeries",
     "area",
+    "threeDArea",
     "horizontalBar",
     "radar"
   ].includes(chartType);
 }
 
 function shouldRequireCategoryField(chartType: ChartType) {
-  return ["stackedBar", "heatmap", "sankey", "sunburst", "graph", "themeRiver"].includes(
-    chartType
-  );
+  return [
+    "stackedBar",
+    "stackedColumn",
+    "percentStackedColumn",
+    "stackedArea",
+    "percentStackedArea",
+    "subcategoryPercentStackedColumn",
+    "heatmap",
+    "sankey",
+    "sunburst",
+    "graph",
+    "themeRiver"
+  ].includes(chartType);
 }
 
 function shouldShowCategoryField(chartType: ChartType) {
   return [
+    "variableWidthColumn",
     "bar",
+    "column",
     "line",
     "scatter",
+    "bubble",
     "stackedBar",
+    "stackedColumn",
+    "percentStackedColumn",
+    "stackedArea",
+    "percentStackedArea",
+    "subcategoryPercentStackedColumn",
     "timeSeries",
     "area",
+    "threeDArea",
     "horizontalBar",
     "radar",
     "heatmap",
@@ -504,7 +669,7 @@ function shouldShowCategoryField(chartType: ChartType) {
 }
 
 function shouldShowYField(chartType: ChartType) {
-  return chartType !== "candlestick";
+  return !["candlestick", "horizontalHistogram", "distributionCurve"].includes(chartType);
 }
 
 function shouldShowCandlestickFields(chartType: ChartType) {
@@ -512,6 +677,10 @@ function shouldShowCandlestickFields(chartType: ChartType) {
 }
 
 function getXFieldLabel(chartType: ChartType) {
+  if (chartType === "horizontalHistogram" || chartType === "distributionCurve") {
+    return "數值欄位";
+  }
+
   if (chartType === "sankey" || chartType === "graph") {
     return "來源";
   }
@@ -528,8 +697,12 @@ function getXFieldLabel(chartType: ChartType) {
 }
 
 function getYFieldLabel(chartType: ChartType) {
-  if (chartType === "scatter") {
+  if (chartType === "scatter" || chartType === "bubble") {
     return "Y 軸";
+  }
+
+  if (chartType === "waterfall") {
+    return "變動值";
   }
 
   if (chartType === "sankey" || chartType === "graph") {
@@ -540,6 +713,19 @@ function getYFieldLabel(chartType: ChartType) {
 }
 
 function getCategoryFieldLabel(chartType: ChartType) {
+  if (
+    [
+      "stackedBar",
+      "stackedColumn",
+      "percentStackedColumn",
+      "stackedArea",
+      "percentStackedArea",
+      "subcategoryPercentStackedColumn"
+    ].includes(chartType)
+  ) {
+    return "子分類";
+  }
+
   if (chartType === "sankey" || chartType === "graph") {
     return "目標";
   }
@@ -713,8 +899,10 @@ function buildChartValidation(
   const xError =
     settings.chartType === "candlestick"
       ? validateDimensionField(metadata, settings.xField, getXFieldLabel(settings.chartType))
-      : settings.chartType === "scatter"
-      ? validateNumericField(metadata, settings.xField, "X 軸")
+      : ["scatter", "bubble", "horizontalHistogram", "distributionCurve"].includes(
+            settings.chartType
+          )
+        ? validateNumericField(metadata, settings.xField, getXFieldLabel(settings.chartType))
       : ["timeSeries", "themeRiver", "calendarHeatmap"].includes(settings.chartType)
         ? validateDateField(metadata, settings.xField, getXFieldLabel(settings.chartType))
         : validateDimensionField(metadata, settings.xField, getXFieldLabel(settings.chartType));
@@ -778,6 +966,7 @@ function buildChartValidation(
     shouldShowYField(settings.chartType) ? settings.yField : "",
     shouldUseCategorySeries(settings.chartType) ||
     settings.chartType === "scatter" ||
+    settings.chartType === "bubble" ||
     shouldRequireCategoryField(settings.chartType)
       ? settings.categoryField
       : "",
@@ -857,6 +1046,96 @@ function aggregateRows(sheet: ParsedSheet, settings: ChartSettings) {
     xValues,
     seriesValues
   };
+}
+
+function buildHistogramData(sheet: ParsedSheet, settings: ChartSettings) {
+  const values = sheet.rows
+    .map((row) => coerceNumber(row[settings.xField] ?? null))
+    .filter((value): value is number => value !== null)
+    .sort((left, right) => left - right);
+
+  if (values.length === 0) {
+    return { labels: [], counts: [] };
+  }
+
+  const minValue = values[0];
+  const maxValue = values[values.length - 1];
+  const binCount = Math.max(1, Math.min(12, Math.ceil(Math.sqrt(values.length))));
+  const binSize = minValue === maxValue ? 1 : (maxValue - minValue) / binCount;
+  const counts = Array.from({ length: binCount }, () => 0);
+
+  values.forEach((value) => {
+    const rawIndex = minValue === maxValue ? 0 : Math.floor((value - minValue) / binSize);
+    const binIndex = Math.min(binCount - 1, Math.max(0, rawIndex));
+    counts[binIndex] += 1;
+  });
+
+  const labels = counts.map((_, index) => {
+    const start = minValue + binSize * index;
+    const end = index === binCount - 1 ? maxValue : minValue + binSize * (index + 1);
+    return `${formatNumberLabel(start)}-${formatNumberLabel(end)}`;
+  });
+
+  return { labels, counts };
+}
+
+function formatNumberLabel(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2);
+}
+
+function normalizeSeriesValues(
+  xValues: string[],
+  seriesValues: Map<string, Map<string, number>>
+) {
+  const totals = new Map(
+    xValues.map((xValue) => [
+      xValue,
+      Array.from(seriesValues.values()).reduce((sum, values) => sum + (values.get(xValue) ?? 0), 0)
+    ])
+  );
+
+  return new Map(
+    Array.from(seriesValues.entries()).map(([seriesName, values]) => [
+      seriesName,
+      new Map(
+        xValues.map((xValue) => {
+          const total = totals.get(xValue) ?? 0;
+          return [xValue, total === 0 ? 0 : ((values.get(xValue) ?? 0) / total) * 100];
+        })
+      )
+    ])
+  );
+}
+
+function buildWaterfallData(sheet: ParsedSheet, settings: ChartSettings) {
+  const xValues: string[] = [];
+  const values: number[] = [];
+
+  sheet.rows.forEach((row) => {
+    const rawXValue = row[settings.xField] ?? null;
+    const value = coerceNumber(row[settings.yField] ?? null);
+    if (isEmptyCell(rawXValue) || value === null) {
+      return;
+    }
+
+    xValues.push(formatDimensionValue(rawXValue));
+    values.push(value);
+  });
+
+  let cumulativeValue = 0;
+  const helpers: number[] = [];
+  const increases: Array<number | "-"> = [];
+  const decreases: Array<number | "-"> = [];
+
+  values.forEach((value) => {
+    const nextValue = cumulativeValue + value;
+    helpers.push(value >= 0 ? cumulativeValue : nextValue);
+    increases.push(value >= 0 ? value : "-");
+    decreases.push(value < 0 ? Math.abs(value) : "-");
+    cumulativeValue = nextValue;
+  });
+
+  return { xValues, helpers, increases, decreases };
 }
 
 function sumSeriesValues(values: Map<string, number>) {
@@ -1383,7 +1662,7 @@ function buildChartOption(
     };
   }
 
-  if (settings.chartType === "pie") {
+  if (settings.chartType === "pie" || settings.chartType === "donutArea") {
     const { xValues, seriesValues } = aggregateRows(sheet, settings);
     const values = seriesValues.get(settings.yField) ?? new Map<string, number>();
     return {
@@ -1395,7 +1674,7 @@ function buildChartOption(
         {
           name: settings.yField,
           type: "pie",
-          radius: ["35%", "68%"],
+          radius: settings.chartType === "donutArea" ? ["35%", "70%"] : ["35%", "68%"],
           data: xValues.map((xValue) => ({
             name: xValue,
             value: values.get(xValue) ?? 0
@@ -1489,9 +1768,10 @@ function buildChartOption(
     };
   }
 
-  if (settings.chartType === "scatter") {
+  if (settings.chartType === "scatter" || settings.chartType === "bubble") {
     const seriesField = settings.categoryField;
     const groupedPoints = new Map<string, number[][]>();
+    const yValues: number[] = [];
 
     sheet.rows.forEach((row) => {
       const xValue = coerceNumber(row[settings.xField] ?? null);
@@ -1500,11 +1780,14 @@ function buildChartOption(
         return;
       }
 
+      yValues.push(Math.abs(yValue));
       const seriesName = seriesField
         ? formatDimensionValue(row[seriesField] ?? null)
         : settings.yField;
       groupedPoints.set(seriesName, [...(groupedPoints.get(seriesName) ?? []), [xValue, yValue]]);
     });
+
+    const maxYValue = Math.max(1, ...yValues);
 
     return {
       ...baseOption,
@@ -1520,7 +1803,10 @@ function buildChartOption(
         name: seriesName,
         type: "scatter",
         data,
-        symbolSize: 8
+        symbolSize:
+          settings.chartType === "bubble"
+            ? (value: number[]) => 8 + (Math.abs(value[1]) / maxYValue) * 28
+            : 8
       }))
     };
   }
@@ -1570,6 +1856,106 @@ function buildChartOption(
     };
   }
 
+  if (settings.chartType === "horizontalHistogram" || settings.chartType === "distributionCurve") {
+    const { labels, counts } = buildHistogramData(sheet, settings);
+
+    if (settings.chartType === "horizontalHistogram") {
+      return {
+        ...baseOption,
+        grid: {
+          left: 104,
+          right: 28,
+          top: 56,
+          bottom: 42,
+          containLabel: true
+        },
+        xAxis: {
+          type: "value",
+          name: "筆數"
+        },
+        yAxis: {
+          type: "category",
+          data: labels
+        },
+        series: [
+          {
+            name: "筆數",
+            type: "bar",
+            data: counts
+          }
+        ]
+      };
+    }
+
+    return {
+      ...baseOption,
+      xAxis: {
+        type: "category",
+        data: labels
+      },
+      yAxis: {
+        type: "value",
+        name: "筆數"
+      },
+      series: [
+        {
+          name: "筆數",
+          type: "line",
+          smooth: true,
+          areaStyle: {
+            opacity: 0.12
+          },
+          data: counts
+        }
+      ]
+    };
+  }
+
+  if (settings.chartType === "waterfall") {
+    const { xValues, helpers, increases, decreases } = buildWaterfallData(sheet, settings);
+    return {
+      ...baseOption,
+      xAxis: {
+        type: "category",
+        data: xValues
+      },
+      yAxis: {
+        type: "value",
+        name: settings.yField
+      },
+      series: [
+        {
+          name: "累積基準",
+          type: "bar",
+          stack: "total",
+          itemStyle: {
+            borderColor: "transparent",
+            color: "transparent"
+          },
+          emphasis: {
+            itemStyle: {
+              borderColor: "transparent",
+              color: "transparent"
+            }
+          },
+          data: helpers
+        },
+        {
+          name: "增加",
+          type: "bar",
+          stack: "total",
+          data: increases
+        },
+        {
+          name: "減少",
+          type: "bar",
+          stack: "total",
+          data: decreases
+        }
+      ]
+    };
+  }
+
   const { xValues, seriesValues } = aggregateRows(sheet, settings);
   if (settings.chartType === "radar") {
     const maxValue = getMaxSeriesValue(seriesValues);
@@ -1597,7 +1983,7 @@ function buildChartOption(
     };
   }
 
-  if (settings.chartType === "horizontalBar") {
+  if (settings.chartType === "bar" || settings.chartType === "horizontalBar") {
     return {
       ...baseOption,
       grid: {
@@ -1623,8 +2009,30 @@ function buildChartOption(
     };
   }
 
-  const isStacked = settings.chartType === "stackedBar";
-  const seriesType = settings.chartType === "line" || settings.chartType === "area" ? "line" : "bar";
+  const isPercentStacked = [
+    "percentStackedColumn",
+    "percentStackedArea",
+    "subcategoryPercentStackedColumn"
+  ].includes(settings.chartType);
+  const isStacked = [
+    "stackedBar",
+    "stackedColumn",
+    "percentStackedColumn",
+    "stackedArea",
+    "percentStackedArea",
+    "subcategoryPercentStackedColumn"
+  ].includes(settings.chartType);
+  const isAreaChart = ["area", "stackedArea", "percentStackedArea", "threeDArea"].includes(
+    settings.chartType
+  );
+  const seriesType =
+    settings.chartType === "line" || isAreaChart
+      ? "line"
+      : "bar";
+  const outputSeriesValues = isPercentStacked
+    ? normalizeSeriesValues(xValues, seriesValues)
+    : seriesValues;
+  const maxSeriesValue = getMaxSeriesValue(seriesValues);
 
   return {
     ...baseOption,
@@ -1634,14 +2042,50 @@ function buildChartOption(
     },
     yAxis: {
       type: "value",
-      name: settings.yField
+      name: isPercentStacked ? "百分比" : settings.yField,
+      max: isPercentStacked ? 100 : undefined,
+      axisLabel: isPercentStacked
+        ? {
+            formatter: "{value}%"
+          }
+        : undefined
     },
-    series: Array.from(seriesValues.entries()).map(([seriesName, values]) => ({
+    series: Array.from(outputSeriesValues.entries()).map(([seriesName, values]) => ({
       name: seriesName,
       type: seriesType,
       stack: isStacked ? "total" : undefined,
-      smooth: settings.chartType === "line" || settings.chartType === "area",
-      areaStyle: settings.chartType === "area" ? {} : undefined,
+      smooth: settings.chartType === "line" || isAreaChart,
+      areaStyle: isAreaChart
+        ? {
+            opacity: settings.chartType === "threeDArea" ? 0.32 : undefined
+          }
+        : undefined,
+      lineStyle:
+        settings.chartType === "threeDArea"
+          ? {
+              width: 3,
+              shadowBlur: 10,
+              shadowColor: "rgba(15, 23, 42, 0.22)",
+              shadowOffsetY: 8
+            }
+          : undefined,
+      barWidth:
+        settings.chartType === "variableWidthColumn" && maxSeriesValue > 0
+          ? Math.max(
+              12,
+              Math.min(
+                56,
+                (xValues.reduce(
+                  (sum, xValue) =>
+                    sum + Math.abs(seriesValues.get(seriesName)?.get(xValue) ?? 0),
+                  0
+                ) /
+                  Math.max(1, xValues.length) /
+                  maxSeriesValue) *
+                  56
+              )
+            )
+          : undefined,
       data: xValues.map((xValue) => values.get(xValue) ?? 0)
     }))
   };
@@ -1916,6 +2360,7 @@ function App() {
   const [queryExportErrorMessage, setQueryExportErrorMessage] = useState("");
   const [isExportingQuery, setIsExportingQuery] = useState(false);
   const [isChartHelpOpen, setIsChartHelpOpen] = useState(false);
+  const [isChartGuideOpen, setIsChartGuideOpen] = useState(false);
   const [chartSettings, setChartSettings] = useState<ChartSettings>(loadChartSettings);
   const [recentFileName, setRecentFileName] = useState(
     () => window.localStorage.getItem(RECENT_FILE_STORAGE_KEY) ?? ""
@@ -2392,14 +2837,24 @@ function App() {
       <aside className="settings">
         <div className="settings-header">
           <h2>圖表設定</h2>
-          <button
-            type="button"
-            className="help-button"
-            aria-label="開啟圖形說明"
-            onClick={() => setIsChartHelpOpen(true)}
-          >
-            ?
-          </button>
+          <div className="settings-header-actions">
+            <button
+              type="button"
+              className="emoji-guide-button"
+              aria-label="開啟圖表判斷原則"
+              onClick={() => setIsChartGuideOpen(true)}
+            >
+              📊
+            </button>
+            <button
+              type="button"
+              className="help-button"
+              aria-label="開啟圖形說明"
+              onClick={() => setIsChartHelpOpen(true)}
+            >
+              ?
+            </button>
+          </div>
         </div>
         <label>
           圖表類型
@@ -2411,26 +2866,11 @@ function App() {
               })
             }
           >
-            <option value="bar">長條圖</option>
-            <option value="line">折線圖</option>
-            <option value="pie">圓餅圖</option>
-            <option value="scatter">散佈圖</option>
-            <option value="stackedBar">堆疊長條圖</option>
-            <option value="timeSeries">時間序列圖</option>
-            <option value="area">面積圖</option>
-            <option value="horizontalBar">水平長條圖</option>
-            <option value="radar">雷達圖</option>
-            <option value="treemap">矩形式樹狀圖</option>
-            <option value="funnel">漏斗圖</option>
-            <option value="gauge">儀表圖</option>
-            <option value="boxplot">箱型圖</option>
-            <option value="heatmap">熱力圖</option>
-            <option value="candlestick">K 線圖</option>
-            <option value="sankey">桑基圖</option>
-            <option value="sunburst">旭日圖</option>
-            <option value="graph">關係圖</option>
-            <option value="themeRiver">主題河流圖</option>
-            <option value="calendarHeatmap">日曆熱力圖</option>
+            {chartTypeOrder.map((chartType) => (
+              <option key={chartType} value={chartType}>
+                {chartTypeLabels[chartType]}
+              </option>
+            ))}
           </select>
         </label>
         <label>
@@ -2612,6 +3052,36 @@ function App() {
         </section>
       </aside>
     </main>
+    {isChartGuideOpen ? (
+      <div
+        className="modal-backdrop"
+        role="presentation"
+        onClick={() => setIsChartGuideOpen(false)}
+      >
+        <section
+          className="chart-guide-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="chart-guide-title"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="chart-help-header">
+            <h2 id="chart-guide-title">圖表判斷原則</h2>
+            <button
+              type="button"
+              className="dialog-close-button"
+              aria-label="關閉圖表判斷原則"
+              onClick={() => setIsChartGuideOpen(false)}
+            >
+              ×
+            </button>
+          </div>
+          <div className="chart-guide-image-wrap">
+            <img src="/images/圖表判斷原則.png" alt="圖表判斷原則" />
+          </div>
+        </section>
+      </div>
+    ) : null}
     {isChartHelpOpen ? (
       <div
         className="modal-backdrop"
